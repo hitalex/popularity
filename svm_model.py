@@ -5,6 +5,8 @@
 具体来说：对于不同的factor，将它们的变化序列作为feature。这样，如果有m个factor，每个factor有n个
 采样时间，那么svm模型处理的特征就有：m*n个
 注意：由于要保证训练集和测试集特征数目的统一性，所以训练集中那些prediction date之后的信息便无法使用
+
+Update: 在使用了很多模型之后，二分类的准确率也只是在70%左右。
 """
 
 import numpy as np
@@ -26,16 +28,18 @@ def prepare_dataset(dataset, num_factor, num_interval):
                 findex = i * num_factor + j
                 feature[findex] = ins[j+1][i]
                 
-        x_train[index, :] = feature
-        y_train[index] = level
+        x[index, :] = feature
+        y[index] = level
+        index += 1
     
     return x, y
 
 def svm_model(train_set, test_set):
     """ svm model
     """
+    #import ipdb; ipdb.set_trace()
     num_factor = len(train_set[0][1][1])
-    num_interval = train_set[0][0][1]       # prediction data point
+    num_interval = train_set[0][1][0][1]       # prediction data point
     
     x_train, y_train = prepare_dataset(train_set, num_factor, num_interval)
     x_test, y_test = prepare_dataset(test_set, num_factor, num_interval)

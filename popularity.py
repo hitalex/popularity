@@ -17,10 +17,12 @@ import numpy as np
 
 from utils import load_id_list, transform_ts
 #from score_ranking import score_ranking_knn, get_instance_distance
-from score_ranking_vote import score_ranking_knn, get_instance_distance, caculate_prior_confidence_score
+from score_ranking_vote import score_ranking_knn, get_instance_distance, caculate_class_prior_confidence_score
+from instance_prior_weighting import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
+
 from effective_factor_method import effective_factor_knn, find_effective_factor
 from baseline_methods import SH_model, ML_model, MLR_model, knn_method, ARIMA_model, Bao_method
-from factor_relevance_plot import *
+from plot.factor_relevance_plot import *
 
 # 评论数量的阈值，如果评论数量小于该值，则不考虑
 MIN_COMMENT = 5
@@ -263,7 +265,7 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         topic_feature = genereate_topic_feature(comment_feature_list, thread_pubdate, gaptime)
         comment_count_feature = genereate_topic_feature(comment_count_list, thread_pubdate, gaptime)
         # transform with delta features
-        topic_feature = transform_count_feature(topic_feature, factor_index_list = [])
+        topic_feature = transform_count_feature(topic_feature, factor_index_list = [0,1])
         # 获得topic的category
         cat = get_topic_category(thread_pubdate, comment_feature_list, percentage_threshold)
         #cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold = 0.8)
@@ -376,7 +378,9 @@ def classify(train_set, test_set, k, num_level, prior_score):
             ipdb.set_trace()
         # find k nearest neighbors' levels    
         #nearest_neighbor_level = find_nearest_neighbor_level(test_ins, train_set, k)
-        nearest_neighbor_level, knn_topic_id, weighted_num_comment = score_ranking_knn(test_ins, train_set, k, prior_score)
+        #nearest_neighbor_level, knn_topic_id, weighted_num_comment = score_ranking_knn(test_ins, train_set, k, prior_score)
+        nearest_neighbor_level, knn_topic_id, weighted_num_comment = weighted_vote_instance_prior(test_ins, train_set, k, prior_score)
+        
         if nearest_neighbor_level == []:
             give_up_list.append(test_topic_id)
             continue
@@ -487,9 +491,13 @@ def save_predictions(prediction_list, y_pred, factor_name):
     #f2 = open('correct/all.txt', 'w')
     for i in range(total):
         #f2.write(test_topic_id + ' ' + str(true_level) + '\n')
-        f.write(prediction_list[i] + ' ' + str(y_pred[i][0]) + '\n')
+        if isinstance(y_pred[i], list):
+            f.write(prediction_list[i] + ' ' + str(y_pred[i][0]) + '\n')
+        else:
+            f.write(prediction_list[i] + ' ' + str(y_pred[i]) + '\n')
         
     f.close()
+    #f2.close()
     
 def main(group_id):
 
@@ -547,15 +555,20 @@ def main(group_id):
     
     #import ipdb
     #ipdb.set_trace()
-    
+        
     print 'The proposed model:'
     k = 3
     num_level = 2
-    print 'Caculating prior score...'
+    
+    print 'Caculating class prior score...'
     num_factor = len(train_set[0][1][1])
-    prior_score = np.ones((num_factor, num_level)) # 初始化
-    prior_score = caculate_prior_confidence_score(train_set, k, num_level = 2)
+    #prior_score = np.ones((num_factor, num_level)) # 初始化
+    #prior_score = caculate_class_prior_confidence_score(train_set, k, num_level = 2)
     #print prior_score; raw_input()
+    
+    print 'Caculating instance prior score...'
+    prior_score = -1
+    prior_score = caculate_instance_prior_confidence_score(train_set, k, num_level = 2)
     
     print 'Classify test instances...'
     y_true, y_pred, comment_true, comment_pred, give_up_list, prediction_list = classify(train_set, test_set, k, num_level, prior_score)
@@ -563,11 +576,16 @@ def main(group_id):
     print 'Number of give-ups: ', len(give_up_list)
     classification_evaluation(y_true, y_pred)
     level_MSE_evaluation(y_true, y_pred)
-    #save_predictions(prediction_list, y_pred, factor_name = 'author_max_mean')
+    save_predictions(prediction_list, y_pred, factor_name = 'fourfactor')
+    #save_predictions(prediction_list, y_true, factor_name = 'all')
     
     comment_RSE_evaluation(comment_true, comment_pred)
     
-    
+    from svm_model import svm_model
+    print 'Building a svm model...'
+    y_true, y_pred = svm_model(train_set, test_set)
+    classification_evaluation(y_true, y_pred)
+
     # 查看对于不同的factor，它们在不同的ratio上的预测结果
     from utils import ratio_accuracy_distribution_plot
     #ratio_accuracy_distribution_plot(y_true, y_pred, test_set, group_id, factor_name='tree_link_density')

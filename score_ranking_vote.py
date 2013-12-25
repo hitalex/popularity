@@ -41,11 +41,25 @@ def get_instance_distance(test_ins, train_ins, findex):
     
     return dis
     
-def caculate_prior_confidence_score(train_set, k, num_level = 2):
-    """ 在holdout dataset(或者训练集)中计算每个dynamic factor的先验信心分数
-    TODO: 这里已经假设只能是两类问题
+def check_convergence_plot(data):
+    """ 将prior中的所有变量的变化历史画出来
     """
-    assert(num_level == 2)
+    import matplotlib.pyplot as plt
+    num_var, total = data.shape
+    colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k']
+    ax = plt.subplot(111)
+    
+    for i in range(num_var):
+        ax.plot(data[i, :], c=colors[i])
+        
+    ax.set_ylim((0,1))
+    
+    plt.show()
+    
+def caculate_class_prior_confidence_score(train_set, k, num_level = 2):
+    """ 在holdout dataset(或者训练集)中计算每个dynamic factor的先验信心分数
+    """
+    import random
     num_factor = len(train_set[0][1][1]) # get the number of factors
     topic_popularity = dict()    # topic_id ==> (level, comment_count)
     for train_topic_id, train_ins, level in train_set:
@@ -55,35 +69,53 @@ def caculate_prior_confidence_score(train_set, k, num_level = 2):
         topic_popularity[train_topic_id] = (level, target_comment_count, prediction_comment_count, ratio)
     
     # prior_score[i, j]: for factor i, P(true=j | pred=j)
-    prior_score = np.zeros((num_factor, num_level))
+    prior_score = np.ones((num_factor, num_level))
     total = len(train_set)
-    for findex in range(num_factor):
-        tp = tn = fp = fn = 0
-        for topic_id, ins, true_level in train_set:
-            level_confidence_score = factor_score_knn(findex, ins, train_set, topic_popularity, k, num_level, gamma = 1)
-            # 如果多个score相同，只取最先出现的
+    # 检查是否收敛
+    score_history = np.zeros((num_factor * num_level, total), float)
+    index = 0
+    for topic_id, ins, true_level in train_set:
+        if random.random() < 0:
+            continue
+        print 'Iteration: ', index
+        for findex in range(num_factor):
+            level_confidence_score = factor_score_knn(findex, ins, train_set, topic_popularity, k, num_level)
+            # predict based on confidence
             pred_level = np.argmax(level_confidence_score)
+            Z = 0
+            for i in range(num_level):    
+                # 此处参考Boosting算法: Boosting是对instance进行weighting，而这里是对分类器计算prior
+                err = 1 - level_confidence_score[i]
+                if err < 0.2:
+                    err = 0.2
+                elif err > 0.8:
+                    err = 0.8
+                    
+                alpha = 0.5 * math.log((1-err) / err)
+                if true_level == i and pred_level == true_level:
+                    weight = math.exp(-1 * alpha)
+                else:
+                    weight = math.exp(alpha)
+                    
+                prior_score[findex, i] *= weight
+                Z += prior_score[findex, i]
             
-            if true_level == 1 and pred_level == 1:
-                tp += 1
-            elif true_level == 1 and pred_level == 0:
-                fn += 1
-            elif true_level == 0 and pred_level == 1:
-                fp += 1
-            else:
-                tn += 1
+            prior_score[findex, :] /= Z
         
+        print 'Current prior info: ', prior_score
         #import ipdb; ipdb.set_trace()
-        # for class 0, i.e. the negative class
-        p_true = (tn + fp) * 1.0 / total
-        p_pred = (tn + fn) * 1.0 / total
-        prior_score[findex, 0] = tn * 1.0 / total * p_true / p_pred
+        # 记录历史prior数据
+        for i in range(num_factor):
+            for j in range(num_level):
+                row_index = i * num_level + j
+                score_history[row_index, index] = prior_score[i, j]
         
-        # for class 1, i.e. the positive class
-        p_true = (tp + fn) * 1.0 / total
-        p_pred = (tp + fp) * 1.0 / total
-        prior_score[findex, 1] = tp * 1.0 / total * p_true / p_pred
+        index += 1
         
+    score_history = score_history[:, index]
+    
+    #check_convergence_plot(score_history)
+    
     return prior_score
         
 def weighted_vote(knn_list, num_level, gamma):
@@ -107,7 +139,8 @@ def weighted_vote(knn_list, num_level, gamma):
         confidence_score[level] +=  weight
         Z += weight
     
-    confidence_score /= Z
+    if Z > 0:
+        confidence_score /= Z
     
     return confidence_score
     
@@ -150,7 +183,7 @@ def get_knn_level_list(distance_comment_list, k, level_count):
         else:
             knn_dis[current_k_index] = dis
             
-    total = knn_dis_count[0]
+    total = knn_dis_count[-1]
     i = 0
     while i < k:
         total = knn_dis_count[i]
@@ -185,7 +218,7 @@ def confidence_score_prediction(factor_confidence_score):
     max_score /= num_factor
     return prediction, max_score
     
-def factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level, gamma):
+def factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level, gamma=1):
     """ 针对某一个factor查找其knn
     """
     test_topic_id = test_ins[0][3]
