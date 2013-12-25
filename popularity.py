@@ -176,7 +176,12 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         # read the first line
         line = f.readline().strip()
         
-        feature_dict = eval(line)
+        try:
+            feature_dict = eval(line)
+        except SyntaxError:
+            print 'Format error in topic:', path
+            continue
+            
         publisher = feature_dict['lz']
         thread_pubdate = datetime.strptime(feature_dict['pubdate'], '%Y-%m-%d %H:%M:%S')
         total_comment = feature_dict['num_comment']
@@ -225,7 +230,7 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
             # features: [comment count, mean degree]
             #feature = [current_comment_count, tree_link_density, mean_degree]
             # 当只取current_comment_count作为feature时，相当于简单knn算法
-            feature = [current_comment_count, num_authors, diffusion_depth, tree_link_density, mean_degree]
+            feature = [current_comment_count, num_authors, reply_density, tree_link_density]
             
             comment_feature_list.append((pubdate, feature))
             # comment_count_list只记录了当前的评论数信息，用于baseline方法计算
@@ -468,15 +473,10 @@ def save_filtered_topics(group_id, dataset):
     path = 'data-dynamic/TopicList-' + group_id + '-filtered.txt'
     dir_path = 'data-dynamic/kong/'
     f = open(path, 'w')
+    print 'Saving filtered topics for group: ', group_id
     for topic_id, topic_feature, popularity_level in dataset:
         f.write(topic_id + '\n')
-        
-        spath = base_path + 'data-dynamic/' + group_id + '/' + topic_id + '.txt'
-        tpath = base_path + 'data-dynamic/' + 'kong' + '/' + topic_id + '.txt'
-        args = '/bin/cp ' + spath + ' ' + tpath
-        # 将topic信息文件复制到目标文件
-        #os.popen(args)
-    
+            
     f.close()
 
 def save_predictions(prediction_list, y_pred, factor_name):
@@ -493,7 +493,7 @@ def save_predictions(prediction_list, y_pred, factor_name):
     
 def main(group_id):
 
-    topiclist_path = 'data-dynamic/TopicList-' + group_id + '-shuffled.txt'
+    topiclist_path = 'data-dynamic/TopicList-' + group_id + '-filtered.txt'
     topic_list = load_id_list(topiclist_path)
     print 'Number of total topics loaded: ', len(topic_list)
 
@@ -510,7 +510,7 @@ def main(group_id):
     # 以上两个参数可以调节
     # 设置采样的间隔
     gaptime = timedelta(hours=5)
-    prediction_date = timedelta(hours=25*5)
+    prediction_date = timedelta(hours=20*5)
     target_date = timedelta(hours=30*5)
     
     # 计算每个topic在prediction_date前会有多少个interval
@@ -518,13 +518,13 @@ def main(group_id):
     print 'Number of features: ', num_feature
     
     alpha = 1.5
-    percentage_threshold = 0.5
+    percentage_threshold = 0.6
     print 'Generating training and test dataset...'
     dataset, comment_count_dataset, Bao_dataset, category_count_list = prepare_dataset(group_id, \
         topic_list, gaptime, pop_level, prediction_date, target_date, alpha, percentage_threshold)
     # 保存那些经过筛选的topic id
-    save_filtered_topics(group_id, dataset)
-    print 'Ploting factor propagation'
+    #save_filtered_topics(group_id, dataset)
+    #print 'Ploting factor propagation'
     #factor_propagation_plot(dataset, num_feature)
     #topic_propagation_plot(dataset, num_feature)
     #return 
@@ -554,7 +554,7 @@ def main(group_id):
     print 'Caculating prior score...'
     num_factor = len(train_set[0][1][1])
     prior_score = np.ones((num_factor, num_level)) # 初始化
-    #prior_score = caculate_prior_confidence_score(train_set, k, num_level = 2)
+    prior_score = caculate_prior_confidence_score(train_set, k, num_level = 2)
     #print prior_score; raw_input()
     
     print 'Classify test instances...'
