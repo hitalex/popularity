@@ -17,6 +17,7 @@ import operator
 import math
 
 from ts_distance import DTW_distance, best_match_distance
+from utils import smooth
 
 def get_instance_distance(test_ins, train_ins, findex):
     """ Caculate DTW distance between two instances
@@ -57,50 +58,63 @@ def caculate_instance_prior_confidence_score(train_set, k, num_level = 2):
     prior_score = dict()
     total = len(train_set)
     index = 0
-    import ipdb; ipdb.set_trace()
+    factor_correct_count = np.zeros((num_factor,), float)
     for topic_id, ins, true_level in train_set:
-        print 'Iteration: ', index
+        print 'Topic id: %s, Iteration: %d' % (topic_id, index)
         # 记录评分矩阵
-        score_matrix = np.zeroes((num_factor, num_level))
+        score_matrix = np.zeros((num_factor, num_level))
         for findex in range(num_factor):
-            level_confidence_score = factor_score_knn(findex, ins, train_set, topic_popularity, k, num_level)
+            level_confidence_score, factor_prior_value = factor_score_knn(findex, ins, train_set, topic_popularity, k, num_level)
+            level_confidence_score = smooth(level_confidence_score)
             score_matrix[findex, :] = level_confidence_score
         # 计算先验，满足两个要求
         level_prior = np.ones((num_factor, num_level)) # prior for classes(levels)
-        level_prior[:, :] = 1.0 / num_level
-        factor_prior = np.ones((num_factor, ))      # prior for factors
+        pred_level_list = [0] * num_factor
+        num_correct = 0 # 得出正确结果的factor的个数
+        print 'Topic %s true level: %d' % (topic_id, true_level)
         for findex in range(num_factor):
             # predict based on confidence
-            pred_level = np.argmax(score_matrix[findex, :])
-            Z = 0
-            for i in range(num_level):
-                # 此处参考Boosting算法: Boosting是对instance进行weighting，而这里是对分类器计算prior
-                err = 1 - score_matrix[findex][i]
-                if err < 0.2:
-                    err = 0.2
-                elif err > 0.8:
-                    err = 0.8
-                    
-                alpha = 0.5 * math.log((1-err) / err)
-                if true_level == i and pred_level == true_level:
-                    weight = math.exp(-1 * alpha)
-                else:
-                    weight = math.exp(alpha)
-                    
-                level_prior[findex, i] *= weight
-                Z += level_prior[findex, i]
+            pred_level_list[findex] = pred_level = np.argmax(score_matrix[findex, :])
+            print 'Factor %d prediction: %d' % (findex, pred_level)
+            score = score_matrix[findex, true_level]
+            if pred_level != true_level:
+                # 如果当前factor分类错误，则此factor对分类的贡献忽略
+                level_prior[findex, :] = 1.0 / num_level
+            else:
+                # 如果预测正确，则在此类中，添加权重
+                beta = score / (1 - score)
+                level_prior[findex, true_level] *= beta
+                num_correct += 1
+                factor_correct_count[findex] += 1
                 
-                # caculating factor priors
-                if true_level == i:
-                    
-            
+            Z = np.sum(level_prior[findex, :])
             level_prior[findex, :] /= Z
+
+        #import ipdb; ipdb.set_trace()    
+        # caculating factor priors
+        factor_prior = score_matrix[:, true_level]      # prior for factors
+        hyper_para = 1.0 # 用于调节不同分类器之间的惩罚
+        Z = 0
+        for findex in range(num_factor):
+            if pred_level_list[findex] == true_level:
+                p = hyper_para / num_correct * score_matrix[findex, true_level]
+            else:
+                p = -1 * hyper_para / (num_factor - num_correct) * (1 - score_matrix[findex, true_level])
+                
+            weight = math.exp(p)
+            factor_prior[findex] *= weight
+            Z += factor_prior[findex]
             
-        prior_score[topic_id] = instance_prior
-        print 'Instance prior for %s: %r' % (topic_id, instance_prior)
+        factor_prior /= Z
+            
+        prior_score[topic_id] = (level_prior, factor_prior)
+        print 'Instance level prior for %s: %r' % (topic_id, level_prior)
+        print 'Instance factor prior for %s: %r' % (topic_id, factor_prior)
         
         index += 1
+        #print 'Training acc of single factors:', factor_correct_count / total
     
+    print 'Training acc of single factors:', factor_correct_count / total
     return prior_score
     
 def get_knn_level_list(distance_comment_list, k, level_count):
@@ -183,35 +197,40 @@ def factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level
     distance_comment_list.sort(key=operator.itemgetter(1), reverse=False)
     # 将所有的最短距离都记录
     knn_level_list, knn_list, level_count_list = get_knn_level_list(distance_comment_list, k, num_level)
-    #print 'kNN list for factor: ', findex
-    #print knn_list
+    print 'kNN list for factor: ', findex
+    print knn_list
     
     num_neighbour = len(knn_list)
-    Z = 0
     level_confidence_score = np.zeros((num_level,), float)
     # TODO： 这里的weight的值很可能覆盖prior
-    
+    factor_prior_value = 0  # 得到关于这个factor的平均prior（可能有多个neighbor） 
+    # 标记是否考虑先验信息
+    with_prior_flag = isinstance(prior_score, dict)
     for i in range(num_neighbour):
         topic_id = knn_list[i][0]
         dis = knn_list[i][1]
         level = knn_list[i][4]
+        
         try:
             weight = math.exp(-gamma * dis)
         except OverflowError:
             print 'Error in math.exp: ', -gamma * dis_list[i]
             continue
-            
-        Z += weight
-        if isinstance(prior_score, dict): # 如果已经传递了先验信息
-            instance_prior = prior_score[topic_id][findex, :]
-            level_confidence_score += (weight * instance_prior)
+        
+        if with_prior_flag: # 如果已经传递了先验信息
+            level_prior, factor_prior = prior_score[topic_id]
+            level_confidence_score += (weight * level_prior[findex, :])
+            factor_prior_value += factor_prior[findex]
         else:
             level_confidence_score[level] += weight
     
-    if Z > 0:
-        level_confidence_score /= Z
-        
-    return level_confidence_score
+    # normalize
+    level_confidence_score /= np.sum(level_confidence_score)
+    factor_prior_value /= num_neighbour
+    if not with_prior_flag:
+        factor_prior_value = 1
+    
+    return level_confidence_score, factor_prior_value
 
 def weighted_vote_instance_prior(test_ins, train_set, k, prior_score, gamma = 1):
     """ 按照score ranking的方法找到k近邻
@@ -232,15 +251,24 @@ def weighted_vote_instance_prior(test_ins, train_set, k, prior_score, gamma = 1)
     #注：分别在不同的dynamic factor中查找最近邻，然后将这些最近邻组合起来投票
     knn_list_all = []
     factor_confidence_score = np.zeros((num_factor, num_level))
+    factor_prior = np.zeros((num_factor,), float)
     for findex in range(num_factor):
         #print 'Caculating score and rank for feature: ', findex
-        factor_confidence_score[findex, :]  = factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level, prior_score, gamma)
+        factor_confidence_score[findex, :], factor_prior[findex]  = factor_score_knn(findex, test_ins, \
+            train_set, topic_popularity, k, num_level, prior_score, gamma)
 
     #print '\nOverall score list: ', knn_list_all
-    print 'Classification confidence score:', factor_confidence_score
+    print 'Without factor prior:\n', factor_confidence_score
+    print 'prediction: ', np.sum(factor_confidence_score, axis=0)
+    print 'Factor priors:', factor_prior
+    for findex in range(num_factor):
+        # 考虑factor prior因素
+        factor_confidence_score[findex, :] *= factor_prior[findex]
+        
+    print 'With factor prior:\n', factor_confidence_score
+    print 'Overall prediction: ', np.sum(factor_confidence_score, axis=0)
     
     prediction_level, confidence_score = confidence_score_prediction(factor_confidence_score)
-    print 'Overall prediction: ', np.sum(factor_confidence_score, axis=0)
     #print 'Overall prediction: %d with confidence: %f' % (prediction_level, confidence_score)
     
     return [prediction_level], '', 0

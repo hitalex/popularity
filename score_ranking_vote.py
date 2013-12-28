@@ -17,6 +17,7 @@ import operator
 import math
 
 from ts_distance import DTW_distance, best_match_distance
+from utils import smooth
 
 def get_instance_distance(test_ins, train_ins, findex):
     """ Caculate DTW distance between two instances
@@ -74,35 +75,36 @@ def caculate_class_prior_confidence_score(train_set, k, num_level = 2):
     # 检查是否收敛
     score_history = np.zeros((num_factor * num_level, total), float)
     index = 0
+    score_matrix = np.zeros((num_factor, num_level))
     for topic_id, ins, true_level in train_set:
-        if random.random() < 0:
-            continue
+        #if random.random() < 0:
+        #    continue
         print 'Iteration: ', index
         for findex in range(num_factor):
             level_confidence_score = factor_score_knn(findex, ins, train_set, topic_popularity, k, num_level)
-            # predict based on confidence
-            pred_level = np.argmax(level_confidence_score)
-            Z = 0
-            for i in range(num_level):    
-                # 此处参考Boosting算法: Boosting是对instance进行weighting，而这里是对分类器计算prior
-                err = 1 - level_confidence_score[i]
-                if err < 0.2:
-                    err = 0.2
-                elif err > 0.8:
-                    err = 0.8
-                    
-                alpha = 0.5 * math.log((1-err) / err)
-                if true_level == i and pred_level == true_level:
-                    weight = math.exp(-1 * alpha)
-                else:
-                    weight = math.exp(alpha)
-                    
-                prior_score[findex, i] *= weight
-                Z += prior_score[findex, i]
-            
-            prior_score[findex, :] /= Z
+            level_confidence_score = smooth(level_confidence_score)
+            score_matrix[findex, :] = level_confidence_score
         
-        print 'Current prior info: ', prior_score
+        #import ipdb; ipdb.set_trace()
+        for findex in range(num_factor):
+            # predict based on confidence
+            pred_level = np.argmax(score_matrix[findex, :])
+            if pred_level != true_level:
+                # 如果预测错误，则将各个信心值调的尽量接近
+                score = score_matrix[findex, true_level]
+                beta = (1 - score) / score
+                prior_score[findex, true_level] *= beta
+            else:
+                # 如果预测正确，则在此类中，添加权重
+                score = score_matrix[findex, true_level]
+                beta = score / (1 - score)
+                prior_score[findex, true_level] *= beta
+            # normalize
+            Z = np.sum(prior_score[findex, :])
+            prior_score[findex, :] /= Z
+            prior_score[findex, :] = smooth(prior_score[findex, :])
+                                    
+        print 'Current prior info: \n', prior_score
         #import ipdb; ipdb.set_trace()
         # 记录历史prior数据
         for i in range(num_factor):
@@ -112,7 +114,7 @@ def caculate_class_prior_confidence_score(train_set, k, num_level = 2):
         
         index += 1
         
-    score_history = score_history[:, index]
+    #score_history = score_history[:, index]
     
     #check_convergence_plot(score_history)
     

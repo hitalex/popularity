@@ -557,11 +557,11 @@ def main(group_id):
     #ipdb.set_trace()
         
     print 'The proposed model:'
-    k = 3
+    k = 1
     num_level = 2
-    
-    print 'Caculating class prior score...'
     num_factor = len(train_set[0][1][1])
+    
+    #print 'Caculating class prior score...'
     #prior_score = np.ones((num_factor, num_level)) # 初始化
     #prior_score = caculate_class_prior_confidence_score(train_set, k, num_level = 2)
     #print prior_score; raw_input()
@@ -580,6 +580,8 @@ def main(group_id):
     #save_predictions(prediction_list, y_true, factor_name = 'all')
     
     comment_RSE_evaluation(comment_true, comment_pred)
+    
+    #print 'The class prior:', prior_score
     
     from svm_model import svm_model
     print 'Building a svm model...'
