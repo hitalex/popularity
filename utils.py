@@ -110,6 +110,23 @@ def load_id_list(file_path):
     
     return id_list
     
+def smooth(a, hyper=2.5):
+    """ Smooth the confidence score
+    a中最大为1，最小为0
+    """
+    import numpy as np
+    import math
+    num = len(a)
+    a = np.array(a, float)
+    Z = 0
+    for i in range(num):
+        a[i] = math.exp(hyper * a[i])
+        Z += a[i]
+    
+    a /= Z
+    
+    return a
+    
 def level_distribution(topic_set, topic_level, num_level):
     """ 查看某个topic set中的level的分布
     """
