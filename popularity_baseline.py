@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import sklearn.metrics
 import numpy as np
 
-from utils import load_id_list, transform_ts
+from utils import load_id_list, transform_ts, down_sampling_dataset
 #from score_ranking import score_ranking_knn, get_instance_distance
 from score_ranking_vote import score_ranking_knn, get_instance_distance, caculate_class_prior_confidence_score
 #from instance_prior_weighting import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
@@ -29,7 +29,7 @@ MIN_COMMENT = 5
 # 评论数量的最大值
 MAX_COMMENT = 1000
 # 可以看作是viral的最少评论数
-VIRAL_MIN_COMMENT = 50
+VIRAL_MIN_COMMENT = 0
 # 抓取内容的时间。如果target_date在此之后，则同样不进行预测
 DEADLINE = datetime(2013, 11, 15)
 # 在开始预测时，最少需要拥有的comment数量
@@ -264,11 +264,11 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         # 接下来将comment_feature_list转换为topic_feature
         topic_feature = genereate_topic_feature(comment_feature_list, thread_pubdate, gaptime)
         comment_count_feature = genereate_topic_feature(comment_count_list, thread_pubdate, gaptime)
-        # transform with delta features
+        # transform with delta features 
         topic_feature = transform_count_feature(topic_feature, factor_index_list = [0])
         # 获得topic的category
-        cat = get_topic_category(thread_pubdate, comment_feature_list, percentage_threshold)
-        #cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold = 0.8)
+        #cat = get_topic_category(thread_pubdate, comment_feature_list, percentage_threshold)
+        cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold = 0.4)
         #cat = get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold = 0.7)
         
         category_count_list[cat] += 1
@@ -296,7 +296,7 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
     
     print '过滤后最终数据集中的topic总数：', len(dataset)
     print 'Category distribution: ', category_count_list
-    print 'Imbalance ratio: ', category_count_list[0] * 1.0 / category_count_list[0]
+    print 'Imbalance ratio: ', category_count_list[0] * 1.0 / category_count_list[1]
     #print 'Popularity level distribution:', level_count_list
     
     return dataset, comment_count_dataset, Bao_dataset, category_count_list
@@ -518,8 +518,9 @@ def main(group_id):
     # 以上两个参数可以调节
     # 设置采样的间隔
     gaptime = timedelta(hours=5)
-    prediction_date = timedelta(hours=20*5)
-    target_date = timedelta(hours=30*5)
+    prediction_date = timedelta(hours=25*5)
+    response_time = timedelta(hours=50)
+    target_date = prediction_date + response_time
     
     # 计算每个topic在prediction_date前会有多少个interval
     num_feature = int(prediction_date.total_seconds() / gaptime.total_seconds())
@@ -541,7 +542,10 @@ def main(group_id):
     # 在调试阶段，暂且不shuffle dataset，避免每次结果都不一样
     #shuffle(dataset)
     
-    # 注意：每次使用的数据集是不同的
+    print 'Down-sampling the datasets...'
+    dataset, comment_count_dataset, Bao_dataset, category_count_list = down_sampling_dataset(dataset, \
+        comment_count_dataset, Bao_dataset, category_count_list)
+    
     total = len(dataset)
     train_cnt = total * 4 / 5
     train_set = dataset[:train_cnt]

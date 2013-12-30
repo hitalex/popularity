@@ -64,7 +64,7 @@ def caculate_instance_prior_confidence_score(train_set, k, num_level = 2):
         # 记录评分矩阵
         score_matrix = np.zeros((num_factor, num_level))
         for findex in range(num_factor):
-            level_confidence_score, factor_prior_value = factor_score_knn(findex, ins, train_set, topic_popularity, k, num_level)
+            level_confidence_score = factor_score_knn(findex, ins, train_set, topic_popularity, k, num_level)
             level_confidence_score = smooth(level_confidence_score)
             score_matrix[findex, :] = level_confidence_score
         # 计算先验，满足两个要求
@@ -89,27 +89,9 @@ def caculate_instance_prior_confidence_score(train_set, k, num_level = 2):
                 
             Z = np.sum(level_prior[findex, :])
             level_prior[findex, :] /= Z
-
-        #import ipdb; ipdb.set_trace()    
-        # caculating factor priors
-        factor_prior = score_matrix[:, true_level]      # prior for factors
-        hyper_para = 1.0 # 用于调节不同分类器之间的惩罚
-        Z = 0
-        for findex in range(num_factor):
-            if pred_level_list[findex] == true_level:
-                p = hyper_para / num_correct * score_matrix[findex, true_level]
-            else:
-                p = -1 * hyper_para / (num_factor - num_correct) * (1 - score_matrix[findex, true_level])
-                
-            weight = math.exp(p)
-            factor_prior[findex] *= weight
-            Z += factor_prior[findex]
             
-        factor_prior /= Z
-            
-        prior_score[topic_id] = (level_prior, factor_prior)
+        prior_score[topic_id] = level_prior
         print 'Instance level prior for %s: %r' % (topic_id, level_prior)
-        print 'Instance factor prior for %s: %r' % (topic_id, factor_prior)
         
         index += 1
         #print 'Training acc of single factors:', factor_correct_count / total
@@ -203,9 +185,9 @@ def factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level
     num_neighbour = len(knn_list)
     level_confidence_score = np.zeros((num_level,), float)
     # TODO： 这里的weight的值很可能覆盖prior
-    factor_prior_value = 0  # 得到关于这个factor的平均prior（可能有多个neighbor） 
     # 标记是否考虑先验信息
     with_prior_flag = isinstance(prior_score, dict)
+    Z = 0
     for i in range(num_neighbour):
         topic_id = knn_list[i][0]
         dis = knn_list[i][1]
@@ -217,20 +199,18 @@ def factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level
             print 'Error in math.exp: ', -gamma * dis_list[i]
             continue
         
+        Z += weight
         if with_prior_flag: # 如果已经传递了先验信息
-            level_prior, factor_prior = prior_score[topic_id]
+            level_prior = prior_score[topic_id]
+            # TODO: 这里并没有考虑prototype本身的标签，而是通过level_prior来体现
             level_confidence_score += (weight * level_prior[findex, :])
-            factor_prior_value += factor_prior[findex]
         else:
             level_confidence_score[level] += weight
     
     # normalize
-    level_confidence_score /= np.sum(level_confidence_score)
-    factor_prior_value /= num_neighbour
-    if not with_prior_flag:
-        factor_prior_value = 1
+    level_confidence_score /= Z
     
-    return level_confidence_score, factor_prior_value
+    return level_confidence_score
 
 def weighted_vote_instance_prior(test_ins, train_set, k, prior_score, gamma = 1):
     """ 按照score ranking的方法找到k近邻
@@ -251,22 +231,14 @@ def weighted_vote_instance_prior(test_ins, train_set, k, prior_score, gamma = 1)
     #注：分别在不同的dynamic factor中查找最近邻，然后将这些最近邻组合起来投票
     knn_list_all = []
     factor_confidence_score = np.zeros((num_factor, num_level))
-    factor_prior = np.zeros((num_factor,), float)
     for findex in range(num_factor):
         #print 'Caculating score and rank for feature: ', findex
-        factor_confidence_score[findex, :], factor_prior[findex]  = factor_score_knn(findex, test_ins, \
+        factor_confidence_score[findex, :] = factor_score_knn(findex, test_ins, \
             train_set, topic_popularity, k, num_level, prior_score, gamma)
 
     #print '\nOverall score list: ', knn_list_all
-    print 'Without factor prior:\n', factor_confidence_score
+    print 'Factor confidence:\n', factor_confidence_score
     print 'prediction: ', np.sum(factor_confidence_score, axis=0)
-    print 'Factor priors:', factor_prior
-    for findex in range(num_factor):
-        # 考虑factor prior因素
-        factor_confidence_score[findex, :] *= factor_prior[findex]
-        
-    print 'With factor prior:\n', factor_confidence_score
-    print 'Overall prediction: ', np.sum(factor_confidence_score, axis=0)
     
     prediction_level, confidence_score = confidence_score_prediction(factor_confidence_score)
     #print 'Overall prediction: %d with confidence: %f' % (prediction_level, confidence_score)

@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import sklearn.metrics
 import numpy as np
 
-from utils import load_id_list, transform_ts
+from utils import load_id_list, transform_ts, down_sampling_dataset
 #from score_ranking import score_ranking_knn, get_instance_distance
 from score_ranking_vote import score_ranking_knn, get_instance_distance, caculate_class_prior_confidence_score
 from effective_factor_method import effective_factor_knn, find_effective_factor
@@ -26,8 +26,9 @@ from plot.factor_relevance_plot import *
 MIN_COMMENT = 5
 # 评论数量的最大值
 MAX_COMMENT = 1000
-# 可以看作是viral的最少评论数
-VIRAL_MIN_COMMENT = 10
+# 可以看作是viral的最少评论数, 目前不打算在此进行约束
+# 目标时刻的评论数用threshold来约束
+VIRAL_MIN_COMMENT = 0
 # 抓取内容的时间。如果target_date在此之后，则同样不进行预测
 DEADLINE = datetime(2013, 11, 15)
 # 在开始预测时，最少需要拥有的comment数量
@@ -266,8 +267,8 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         topic_feature = transform_count_feature(topic_feature, factor_index_list = [])
         # 获得topic的category
         #cat = get_topic_category(thread_pubdate, comment_feature_list, percentage_threshold)
-        cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold = 0.6)
-        #cat = get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold = 0.7)
+        cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold)
+        #cat = get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold)
         
         category_count_list[cat] += 1
         # first feature vector，记录其他信息
@@ -294,7 +295,7 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
     
     print '过滤后最终数据集中的topic总数：', len(dataset)
     print 'Category distribution: ', category_count_list
-    print 'Imbalance ratio: ', category_count_list[0] * 1.0 / category_count_list[0]
+    print 'Imbalance ratio: ', category_count_list[0] * 1.0 / category_count_list[1]
     #print 'Popularity level distribution:', level_count_list
     
     return dataset, comment_count_dataset, Bao_dataset, category_count_list
@@ -338,15 +339,16 @@ def main(group_id):
     # 以上两个参数可以调节
     # 设置采样的间隔
     gaptime = timedelta(hours=5)
-    prediction_date = timedelta(hours=5*5)
-    target_date = timedelta(hours=20*5)
+    prediction_date = timedelta(hours=15*5)
+    response_time = timedelta(hours=50)
+    target_date = prediction_date + response_time
     
     # 计算每个topic在prediction_date前会有多少个interval
     num_feature = int(prediction_date.total_seconds() / gaptime.total_seconds())
     print 'Number of features: ', num_feature
     
     alpha = 1.5
-    percentage_threshold = 0.5
+    percentage_threshold = 0.7
     print 'Generating training and test dataset...'
     dataset, comment_count_dataset, Bao_dataset, category_count_list = prepare_dataset(group_id, \
         topic_list, gaptime, pop_level, prediction_date, target_date, alpha, percentage_threshold)
@@ -366,13 +368,22 @@ def main(group_id):
     train_cnt = total * 4 / 5
     train_set = dataset[:train_cnt]
     test_set = dataset[train_cnt:]
+    print 'Training: %d, Test: %d' % (train_cnt, total-train_cnt)
+    print 'Category 0: %d, Category 1: %d ' % (category_count_list[0] , category_count_list[1])
+    print 'Imbalance ratio: ', category_count_list[0] * 1.0 / category_count_list[1]
+    
+    dataset, comment_count_dataset, Bao_dataset, category_count_list = down_sampling_dataset(dataset, \
+        comment_count_dataset, Bao_dataset, category_count_list)    
+    print 'After down sampling...'
+    total = len(dataset)
+    train_cnt = total * 4 / 5
+    train_set = dataset[:train_cnt]
+    test_set = dataset[train_cnt:]
     
     print 'Training: %d, Test: %d' % (train_cnt, total-train_cnt)
     print 'Category 0: %d, Category 1: %d ' % (category_count_list[0] , category_count_list[1])
     print 'Imbalance ratio: ', category_count_list[0] * 1.0 / category_count_list[1]
-    #num_level = len(pop_level)
-    #raw_input()
-    
+
     
 if __name__ == '__main__':
     import sys

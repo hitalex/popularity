@@ -146,22 +146,6 @@ def weighted_vote(knn_list, num_level, gamma):
     
     return confidence_score
     
-def is_trusted(nn_level_list, num_level=2, majority_threshold=0.66):
-    """ 判断一个level的列表是否值得相信
-    majority_threshold: 其中一个level的比例大于此值，则值得相信
-    """
-    level_count = [0] * num_level
-    for level in nn_level_list:
-        level_count[level] += 1
-        
-    total = len(nn_level_list)
-    for i in range(num_level):
-        level_count[i] = level_count[i] * 1.0 / total
-        if level_count[i] >= majority_threshold:
-            return True
-            
-    return False
-    
 def get_knn_level_list(distance_comment_list, k, level_count):
     """ 获取k近邻的level标签
     按照如下方式：首先获取最近邻，如果最近邻数超过k个，则返回全部的最近邻；
@@ -222,6 +206,7 @@ def confidence_score_prediction(factor_confidence_score):
     
 def factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level, gamma=1):
     """ 针对某一个factor查找其knn
+    gamma: 用于距离度量参数
     """
     test_topic_id = test_ins[0][3]
     train_count = len(train_set)
@@ -255,7 +240,7 @@ def factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level
     
     return level_confidence_score
 
-def score_ranking_knn(test_ins, train_set, k, prior_score, gamma = 1):
+def score_ranking_knn(test_ins, train_set, k, prior_score = -1, gamma = 1):
     """ 按照score ranking的方法找到k近邻
     gamma_list: the scaling parameters of each dynamic factors for weighted vote
     """
@@ -263,6 +248,7 @@ def score_ranking_knn(test_ins, train_set, k, prior_score, gamma = 1):
     num_level = 2
 
     topic_popularity = dict()    # topic_id ==> (level, comment_count)
+    level_count_list = [0] * num_level
     for train_topic_id, train_ins, level in train_set:
         target_comment_count = train_ins[0][0]
         prediction_comment_count = train_ins[0][4]
@@ -280,15 +266,18 @@ def score_ranking_knn(test_ins, train_set, k, prior_score, gamma = 1):
 
     #print '\nOverall score list: ', knn_list_all
     print 'Classification confidence score:', factor_confidence_score
-    # add prior confidence score
-    for findex in range(num_factor):
-        for i in range(num_level):
-            factor_confidence_score[findex, i] *= prior_score[findex, i]
+    if prior_score != -1:
+        # add prior confidence score
+        for findex in range(num_factor):
+            for i in range(num_level):
+                factor_confidence_score[findex, i] *= prior_score[findex, i]
     
     print 'After adding prior confidence score: ', factor_confidence_score
     
-    prediction_level, confidence_score = confidence_score_prediction(factor_confidence_score)
-    print 'Overall prediction: ', np.sum(factor_confidence_score, axis=0)
+    #prediction_level, confidence_score = confidence_score_prediction(factor_confidence_score)
+    confidence_score = np.sum(factor_confidence_score, axis=0)
+    prediction_level = np.argmax(confidence_score)
+    print 'Overall prediction: ', confidence_score
     #print 'Overall prediction: %d with confidence: %f' % (prediction_level, confidence_score)
     
     """
