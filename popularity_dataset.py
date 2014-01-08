@@ -28,7 +28,7 @@ MIN_COMMENT = 5
 MAX_COMMENT = 1000
 # 可以看作是viral的最少评论数, 目前不打算在此进行约束
 # 目标时刻的评论数用threshold来约束
-VIRAL_MIN_COMMENT = 0
+VIRAL_MIN_COMMENT = 50
 # 抓取内容的时间。如果target_date在此之后，则同样不进行预测
 DEADLINE = datetime(2013, 11, 15)
 # 在开始预测时，最少需要拥有的comment数量
@@ -266,8 +266,8 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         # transform with delta features
         topic_feature = transform_count_feature(topic_feature, factor_index_list = [])
         # 获得topic的category
-        #cat = get_topic_category(thread_pubdate, comment_feature_list, percentage_threshold)
-        cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold)
+        cat = get_topic_category(thread_pubdate, comment_feature_list, percentage_threshold)
+        #cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold)
         #cat = get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold)
         
         category_count_list[cat] += 1
@@ -339,7 +339,7 @@ def main(group_id):
     # 以上两个参数可以调节
     # 设置采样的间隔
     gaptime = timedelta(hours=5)
-    prediction_date = timedelta(hours=15*5)
+    prediction_date = timedelta(hours=10*5)
     response_time = timedelta(hours=50)
     target_date = prediction_date + response_time
     
@@ -348,7 +348,7 @@ def main(group_id):
     print 'Number of features: ', num_feature
     
     alpha = 1.5
-    percentage_threshold = 0.7
+    percentage_threshold = 0.5
     print 'Generating training and test dataset...'
     dataset, comment_count_dataset, Bao_dataset, category_count_list = prepare_dataset(group_id, \
         topic_list, gaptime, pop_level, prediction_date, target_date, alpha, percentage_threshold)

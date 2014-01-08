@@ -18,7 +18,9 @@ import numpy as np
 from utils import load_id_list, transform_ts, down_sampling_dataset
 #from score_ranking import score_ranking_knn, get_instance_distance
 from score_ranking_vote import score_ranking_knn, get_instance_distance, caculate_class_prior_confidence_score
-from instance_prior_weighting import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
+#from instance_prior_weighting import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
+#from instance_prior_weighting2 import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
+from instance_prior_weighting3 import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
 
 from effective_factor_method import effective_factor_knn, find_effective_factor
 from baseline_methods import SH_model, ML_model, MLR_model, knn_method, ARIMA_model, Bao_method
@@ -29,7 +31,7 @@ MIN_COMMENT = 5
 # 评论数量的最大值
 MAX_COMMENT = 1000
 # 可以看作是viral的最少评论数
-VIRAL_MIN_COMMENT = 0
+VIRAL_MIN_COMMENT = 50
 # 抓取内容的时间。如果target_date在此之后，则同样不进行预测
 DEADLINE = datetime(2013, 11, 15)
 # 在开始预测时，最少需要拥有的comment数量
@@ -96,10 +98,10 @@ def get_topic_category(thread_pubdate, comment_feature_list, threshold):
            
     return cat
     
-def get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold = 0.6):
+def get_comment_percentage_category(target_comment, prediction_comment_count, percentage_threshold = 0.6):
     """ 分类标准：某个帖子在prediction_date_point时的comment数是否已经占所有comment总数的percentage_threshold
     """
-    if total_comment > VIRAL_MIN_COMMENT and prediction_comment_count * 1.0 / total_comment <= percentage_threshold:
+    if target_comment > VIRAL_MIN_COMMENT and prediction_comment_count * 1.0 / target_comment <= percentage_threshold:
         cat = 1
     else:
         cat = 0
@@ -260,6 +262,7 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         # 如果最后一个评论的时间还不到target date，则不考虑这些帖子
         if not target_date_flag:
             target_comment_count = current_comment_count
+            #continue  #当分类标准为comment_percentage的total comment count时，应该注释此句
             
         # 接下来将comment_feature_list转换为topic_feature
         topic_feature = genereate_topic_feature(comment_feature_list, thread_pubdate, gaptime)
@@ -268,8 +271,8 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         topic_feature = transform_count_feature(topic_feature, factor_index_list = [0,1])
         # 获得topic的category
         #cat = get_topic_category(thread_pubdate, comment_feature_list, percentage_threshold)
-        cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold = 0.6)
-        #cat = get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold = 0.7)
+        #cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold)
+        cat = get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold)
         
         category_count_list[cat] += 1
         # first feature vector，记录其他信息
@@ -518,9 +521,12 @@ def main(group_id):
     # 以上两个参数可以调节
     # 设置采样的间隔
     gaptime = timedelta(hours=5)
-    prediction_date = timedelta(hours=10*5)
+    prediction_date = timedelta(hours=15*5)
     response_time = timedelta(hours=50)
     target_date = prediction_date + response_time
+    
+    print 'Prediction date:', prediction_date.total_seconds() / 60*60
+    print 'Response time:', response_time.total_seconds() / 60 * 60
     
     # 计算每个topic在prediction_date前会有多少个interval
     num_feature = int(prediction_date.total_seconds() / gaptime.total_seconds())

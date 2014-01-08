@@ -26,6 +26,10 @@ def down_sampling_dataset(dataset, comment_count_dataset, Bao_dataset, category_
     new_category_count_list = [0, 0]
     print 'Downsampling category: ', majority_category
     total = len(dataset)
+    # 在测试期间，需要保证训练数据的一致性，所以暂时改变down sampling方法
+    majortity_count = 0
+    minority_class_count = min(category_count_list[:2])
+    #import ipdb; ipdb.set_trace()
     for i in range(total):
         # TODO: 需要说明的是类别标签信息必须在最后一个item上，否则会出错
         cat = dataset[i][-1]
@@ -33,14 +37,23 @@ def down_sampling_dataset(dataset, comment_count_dataset, Bao_dataset, category_
         if cat == majority_category: # 只对majortiy class进行处理
             if random() > ratio: # 未被选中
                 continue
-                
+        """
+        if cat == majority_category:
+            majortity_count += 1
+            if majortity_count > minority_class_count:
+                continue
+            else:
+                selected_index.append(i)
+        else:   
+            selected_index.append(i)
+        """
         selected_index.append(i)
         new_category_count_list[cat] += 1
     
     dataset = [dataset[i] for i in selected_index]
     comment_count_dataset = [comment_count_dataset[i] for i in selected_index]
     Bao_dataset = [Bao_dataset[i] for i in selected_index]
-    
+        
     return dataset, comment_count_dataset, Bao_dataset, new_category_count_list
     
 def ratio_accuracy_distribution_plot(y_true, y_pred, test_set, group_id, factor_name):

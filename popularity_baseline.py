@@ -17,8 +17,9 @@ import numpy as np
 
 from utils import load_id_list, transform_ts, down_sampling_dataset
 #from score_ranking import score_ranking_knn, get_instance_distance
-from score_ranking_vote import score_ranking_knn, get_instance_distance, caculate_class_prior_confidence_score
+#from score_ranking_vote import score_ranking_knn, get_instance_distance, caculate_class_prior_confidence_score
 #from instance_prior_weighting import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
+from instance_prior_weighting2 import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
 
 from effective_factor_method import effective_factor_knn, find_effective_factor
 from baseline_methods import SH_model, ML_model, MLR_model, knn_method, ARIMA_model, Bao_method
@@ -29,7 +30,7 @@ MIN_COMMENT = 5
 # 评论数量的最大值
 MAX_COMMENT = 1000
 # 可以看作是viral的最少评论数
-VIRAL_MIN_COMMENT = 0
+VIRAL_MIN_COMMENT = 50
 # 抓取内容的时间。如果target_date在此之后，则同样不进行预测
 DEADLINE = datetime(2013, 11, 15)
 # 在开始预测时，最少需要拥有的comment数量
@@ -96,10 +97,10 @@ def get_topic_category(thread_pubdate, comment_feature_list, threshold):
            
     return cat
     
-def get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold = 0.6):
+def get_comment_percentage_category(target_comment, prediction_comment_count, percentage_threshold = 0.6):
     """ 分类标准：某个帖子在prediction_date_point时的comment数是否已经占所有comment总数的percentage_threshold
     """
-    if total_comment > VIRAL_MIN_COMMENT and prediction_comment_count * 1.0 / total_comment <= percentage_threshold:
+    if target_comment > VIRAL_MIN_COMMENT and prediction_comment_count * 1.0 / target_comment <= percentage_threshold:
         cat = 1
     else:
         cat = 0
@@ -200,7 +201,6 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         comment_count_list = []     # 用于ML模型，只用来收集comment count特征
         for line in f:
             line = line.strip()
-            current_comment_count += 1
             # eval the str as feature dict
             nan = float('nan')
             feature_dict = eval(line)
@@ -209,6 +209,7 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
             pid                     = feature_dict['pid']
             pubdate                 = datetime.strptime(feature_dict['pubdate'], '%Y-%m-%d %H:%M:%S')
             
+            current_comment_count += 1
             # author-reply features
             mean_degree             = feature_dict['mean_degree']
             clustering_coefficient  = feature_dict['clustering_coefficient']
@@ -260,16 +261,17 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         # 如果最后一个评论的时间还不到target date，则不考虑这些帖子
         if not target_date_flag:
             target_comment_count = current_comment_count
+            continue
             
         # 接下来将comment_feature_list转换为topic_feature
         topic_feature = genereate_topic_feature(comment_feature_list, thread_pubdate, gaptime)
         comment_count_feature = genereate_topic_feature(comment_count_list, thread_pubdate, gaptime)
         # transform with delta features 
-        topic_feature = transform_count_feature(topic_feature, factor_index_list = [0])
+        topic_feature = transform_count_feature(topic_feature, factor_index_list = [])
         # 获得topic的category
         #cat = get_topic_category(thread_pubdate, comment_feature_list, percentage_threshold)
-        cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold = 0.4)
-        #cat = get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold = 0.7)
+        cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold)
+        #cat = get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold)
         
         category_count_list[cat] += 1
         # first feature vector，记录其他信息
@@ -378,8 +380,8 @@ def classify(train_set, test_set, k, num_level):
             ipdb.set_trace()
         # find k nearest neighbors' levels    
         #nearest_neighbor_level = find_nearest_neighbor_level(test_ins, train_set, k)
-        nearest_neighbor_level, knn_topic_id, weighted_num_comment = score_ranking_knn(test_ins, train_set, k)
-        #nearest_neighbor_level, knn_topic_id, weighted_num_comment = weighted_vote_instance_prior(test_ins, train_set, k, prior_score)
+        #nearest_neighbor_level, knn_topic_id, weighted_num_comment = score_ranking_knn(test_ins, train_set, k)
+        nearest_neighbor_level, knn_topic_id, weighted_num_comment = weighted_vote_instance_prior(test_ins, train_set, k)
         
         if nearest_neighbor_level == []:
             give_up_list.append(test_topic_id)
@@ -486,6 +488,7 @@ def save_filtered_topics(group_id, dataset):
 def save_predictions(prediction_list, y_pred, factor_name):
     """ 保存所有预测正确的topic
     """
+    print 'Saving predictions for factor: ', factor_name
     total = len(prediction_list)
     f = open('correct/correct-' + factor_name + '.txt', 'w')
     #f2 = open('correct/all.txt', 'w')
@@ -518,7 +521,7 @@ def main(group_id):
     # 以上两个参数可以调节
     # 设置采样的间隔
     gaptime = timedelta(hours=5)
-    prediction_date = timedelta(hours=25*5)
+    prediction_date = timedelta(hours=10*5)
     response_time = timedelta(hours=50)
     target_date = prediction_date + response_time
     
@@ -527,7 +530,7 @@ def main(group_id):
     print 'Number of features: ', num_feature
     
     alpha = 1.5
-    percentage_threshold = 0.6
+    percentage_threshold = 0.7
     print 'Generating training and test dataset...'
     dataset, comment_count_dataset, Bao_dataset, category_count_list = prepare_dataset(group_id, \
         topic_list, gaptime, pop_level, prediction_date, target_date, alpha, percentage_threshold)
@@ -571,7 +574,7 @@ def main(group_id):
     print 'Number of give-ups: ', len(give_up_list)
     classification_evaluation(y_true, y_pred)
     level_MSE_evaluation(y_true, y_pred)
-    #save_predictions(prediction_list, y_pred, factor_name = 'fourfactor')
+    #save_predictions(prediction_list, y_pred, factor_name = 'num_authors')
     #save_predictions(prediction_list, y_true, factor_name = 'all')
     
     comment_RSE_evaluation(comment_true, comment_pred)
