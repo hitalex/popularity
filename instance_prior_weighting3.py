@@ -17,7 +17,7 @@ import operator
 import math
 
 from ts_distance import DTW_distance, best_match_distance
-from utils import smooth
+from utils import smooth, my_min_max_scaler
 
 def get_instance_distance(test_ins, train_ins, findex):
     """ Caculate DTW distance between two instances
@@ -60,21 +60,22 @@ def caculate_instance_prior_confidence_score(train_set, k, num_level = 2):
     index = 0
     factor_correct_count = np.zeros((num_factor,), float)
     for topic_id, ins, true_level in train_set:
-        print 'Topic id: %s, Iteration: %d' % (topic_id, index)
+        print 'Topic id: %s, Iteration: %d, true level: %d' % (topic_id, index, true_level)
         # 记录评分矩阵
         score_matrix = np.zeros((num_factor, num_level))
         for findex in range(num_factor):
+            # 使用原来的近邻挑选方法
             level_confidence_score, level_prior_score = factor_score_knn(findex, ins, train_set, topic_popularity, k, num_level)
             level_confidence_score = smooth(level_confidence_score)
             score_matrix[findex, :] = level_confidence_score
         
         pred_level_list = [0] * num_factor
         num_correct = 0 # 得出正确结果的factor的个数
-        print 'Topic %s, true level: %d' % (topic_id, true_level)
+        
         for findex in range(num_factor):
             # predict based on confidence
             pred_level_list[findex] = pred_level = np.argmax(score_matrix[findex, :])
-            print 'Factor %d prediction: %d' % (findex, pred_level)
+            print 'Factor %d: confidence = %r, prediction = %d' % (findex, score_matrix[findex, :], pred_level)
             if pred_level != true_level:
                 pass
             else:
@@ -84,18 +85,30 @@ def caculate_instance_prior_confidence_score(train_set, k, num_level = 2):
         # 计算先验，满足两个要求
         # 每个instance都保存有某个factor对其分类结果的信息，如果分类正确，则权重大于1，如果分类错误，则小于1
         level_prior = np.ones((num_factor, )) # prior for classes(levels)
-        # TODO: 在factor之间之间进行区别：例如如果只有一个factor预测正确，那么奖励会更多
-        rho = 2.0
+        # 在factor之间之间进行区别：例如如果只有一个factor预测正确，那么奖励会更多
+        delta = 1.0
+        if num_correct == 0:
+            correct_reward = 1.0
+        else:
+            correct_reward = delta / num_correct
+        
+        rho = 3
         for findex in range(num_factor):
             diff_score = abs(score_matrix[findex, 0] - score_matrix[findex, 1])
             if pred_level_list[findex] != true_level:
-                level_prior[findex] *= math.exp(-1 * rho * diff_score)
+                tmp = math.exp(-1 * rho * diff_score)
             else:
-                level_prior[findex] *= math.exp(+1 * rho * diff_score)
+                tmp = math.exp(+1 * rho * diff_score)
+                
+            # 另外一层考虑：例如如果只有一个factor预测正确，则奖励会更多
+            if pred_level_list[findex] == true_level:
+                tmp *= math.exp(correct_reward)
+            
+            level_prior[findex] *= tmp
         
-        level_prior /= np.sum(level_prior)
+        #level_prior /= np.sum(level_prior)
         prior_score[topic_id] = level_prior
-        print 'Instance level prior for %s: %r' % (topic_id, level_prior)
+        print 'Instance level prior for %s: %r\n' % (topic_id, level_prior)
         
         index += 1
         #print 'Training acc of single factors:', factor_correct_count / total
@@ -151,6 +164,49 @@ def get_knn_level_list(distance_comment_list, k, num_level):
     
     return knn_level_list, result_comment_list, level_count_list
     
+def get_knn_level_list_old(distance_comment_list, k, level_count):
+    """ 获取k近邻的level标签
+    注意：有可能同一个距离有多个近邻，这时考虑的其实是前k个距离的所有近邻（与之前的计算方法不同）
+    这样做的好处是：统一了计算方法，但最终的得到的近邻数可能大于k
+    Note: 这里确保包括两类近邻，可能最终得到的近邻数大约k
+    """
+    knn_dis = [0] * len(distance_comment_list)
+    level_count_list = [0] * level_count
+    knn_dis_count = [0] * len(distance_comment_list)
+    
+    knn_dis[0] = distance_comment_list[0][1]
+    level = distance_comment_list[0][4]
+    level_count_list[level] += 1
+    
+    current_k_index = 0
+    total = len(distance_comment_list)
+    for i in range(1, total):
+        dis = distance_comment_list[i][1]
+        level = distance_comment_list[i][4]
+        level_count_list[level] += 1
+        if knn_dis[current_k_index] == dis:
+            continue
+        
+        knn_dis_count[current_k_index] = i
+        current_k_index += 1
+        # 确保包括两类的数据
+        if current_k_index >= k and (level_count_list[0] * level_count_list[1] > 0):
+            break
+        else:
+            knn_dis[current_k_index] = dis
+            
+    total = knn_dis_count[current_k_index - 1] + 1
+    #import ipdb; ipdb.set_trace()
+    
+    knn_level_list = [0] * total
+    level_count_list = [0] * level_count
+    for i in range(total):
+        level = distance_comment_list[i][4]
+        knn_level_list[i] = level
+        level_count_list[level] += 1
+        
+    return knn_level_list, distance_comment_list[:total], level_count_list
+    
 def confidence_score_prediction(factor_confidence_score):
     """ 根据每个factor在每个类别的信心值，作出预测和信心值
     """
@@ -172,6 +228,9 @@ def confidence_score_prediction(factor_confidence_score):
 def factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level, prior_score = -1, gamma = 1):
     """ 针对某一个factor查找其knn
     """
+    # 标记是否考虑先验信息
+    with_prior_flag = isinstance(prior_score, dict)
+    
     test_topic_id = test_ins[0][3]
     train_count = len(train_set)
     distance_comment_list = [0] * train_count
@@ -196,21 +255,33 @@ def factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level
     # 按照dis进行升序排序
     distance_comment_list.sort(key=operator.itemgetter(1), reverse=False)
     # 将所有的最短距离都记录
-    knn_level_list, knn_list, level_count_list = get_knn_level_list(distance_comment_list, k, num_level)
-    print 'kNN list for factor: ', findex
-    print knn_list
+    # 需要确保knn_level_list中包括两类的样本
+    knn_level_list, knn_list, level_count_list = get_knn_level_list_old(distance_comment_list, k, num_level)
+        
+    #print 'kNN list for factor: ', findex
+    #print knn_list
     
     num_neighbour = len(knn_list)
     level_confidence_score = np.zeros((num_level,), float)
     # TODO： 这里的weight的值很可能覆盖prior
-    # 标记是否考虑先验信息
-    with_prior_flag = isinstance(prior_score, dict)
     Z = 0
     level_prior_score = [0] * num_level
+    # normalize the distance
+    dis_list = [0] * num_neighbour
+    for i in range(num_neighbour):
+        dis_list[i] = knn_list[i][1]
+    
+    # use the min-max normalizer
+    dis_list = my_min_max_scaler(dis_list)
+    print 'Transformed distance list:', dis_list
+    #import ipdb; ipdb.set_trace()
+    Z = [0] * 2
+    gamma = 1
     for i in range(num_neighbour):
         topic_id = knn_list[i][0]
-        dis = knn_list[i][1]
+        #dis = knn_list[i][1]
         level = knn_list[i][4]
+        dis = dis_list[i]
         
         try:
             weight = math.exp(-gamma * dis)
@@ -218,7 +289,7 @@ def factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level
             print 'Error in math.exp: ', -gamma * dis_list[i]
             continue
         
-        Z += weight
+        Z[level] += weight
         if with_prior_flag: # 如果已经传递了先验信息
             level_confidence_score[level] += weight
             # 计算每个instance在这个factor下的level prior score
@@ -228,13 +299,18 @@ def factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level
             level_confidence_score[level] += weight
     
     # normalize
-    level_confidence_score /= np.sum(level_confidence_score)
+    level_confidence_score /= sum(Z)
     # 在不同factor下的level confidence下加入level_prior_score信息
     if with_prior_flag:
+        level_prior_score[0] /= Z[0]
+        level_prior_score[1] /= Z[1]
         # 归一化， 此时 level_prior_score 的作用和level_confidence_score相同，只不过包含了先验信息
         level_prior_score /= np.sum(level_prior_score)
         
+    #print 'Level confidence score:', level_confidence_score
+    
     return level_confidence_score, level_prior_score
+    
 
 def weighted_vote_instance_prior(test_ins, train_set, k, prior_score = -1, gamma = 1):
     """ 按照score ranking的方法找到k近邻

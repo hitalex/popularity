@@ -258,6 +258,7 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
             
         # 如果最后一个评论的时间还不到target date，则不考虑这些帖子
         if not target_date_flag:
+            
             continue
             
         # 接下来将comment_feature_list转换为topic_feature
@@ -266,8 +267,8 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         # transform with delta features
         topic_feature = transform_count_feature(topic_feature, factor_index_list = [])
         # 获得topic的category
-        cat = get_topic_category(thread_pubdate, comment_feature_list, percentage_threshold)
-        #cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold)
+        #cat = get_topic_category(thread_pubdate, comment_feature_list, percentage_threshold)
+        cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold)
         #cat = get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold)
         
         category_count_list[cat] += 1
@@ -312,20 +313,18 @@ def save_filtered_topics(group_id, dataset):
     
     path = 'data-dynamic/TopicList-' + group_id + '-filtered.txt'
     f = open(path, 'w')
-    path = 'data-dynamic/TopicList-kong2-filtered.txt'
-    ft = open(path, 'a')
     for topic_id, topic_feature, popularity_level in dataset:
         f.write(topic_id + '\n')
-        ft.write(topic_id + '\n')
+        #ft.write(topic_id + '\n')
         
         spath = base_path + 'data-dynamic/' + group_id + '/' + topic_id + '.txt'
         tpath = base_path + 'data-dynamic/' + 'kong2' + '/' + topic_id + '.txt'
         args = '/bin/cp ' + spath + ' ' + tpath
         # 将topic信息文件复制到目标文件
-        os.popen(args)
+        #os.popen(args)
     
     f.close()
-    ft.close()
+    #ft.close()
     
 def main(group_id):
 
@@ -339,7 +338,7 @@ def main(group_id):
     # 以上两个参数可以调节
     # 设置采样的间隔
     gaptime = timedelta(hours=5)
-    prediction_date = timedelta(hours=10*5)
+    prediction_date = timedelta(hours=15*5)
     response_time = timedelta(hours=50)
     target_date = prediction_date + response_time
     
@@ -348,7 +347,7 @@ def main(group_id):
     print 'Number of features: ', num_feature
     
     alpha = 1.5
-    percentage_threshold = 0.5
+    percentage_threshold = 0.7
     print 'Generating training and test dataset...'
     dataset, comment_count_dataset, Bao_dataset, category_count_list = prepare_dataset(group_id, \
         topic_list, gaptime, pop_level, prediction_date, target_date, alpha, percentage_threshold)
@@ -384,6 +383,7 @@ def main(group_id):
     print 'Category 0: %d, Category 1: %d ' % (category_count_list[0] , category_count_list[1])
     print 'Imbalance ratio: ', category_count_list[0] * 1.0 / category_count_list[1]
 
+    save_filtered_topics(group_id, dataset)
     
 if __name__ == '__main__':
     import sys

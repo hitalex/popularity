@@ -8,11 +8,29 @@ def seg_chinese(chinese_str):
     seg_list = jieba.cut(chinese_str)
     return " ".join(seg_list)
     
+def my_min_max_scaler(data, a=0, b=1.0):
+    """ 将a中的数据归一化到min_value和max_value之间
+    a and b: 指定的区间
+    """
+    assert(b > a)
+    
+    count = len(data)
+    min_value = min(data)
+    max_value = max(data)
+    
+    if min_value == max_value:
+        return [0] * data
+        
+    for i in range(count):
+        data[i] = (b-a) * (data[i] - min_value) * 1.0 / (max_value - min_value)
+        
+    return data
+            
 def down_sampling_dataset(dataset, comment_count_dataset, Bao_dataset, category_count_list):
     """ 下采样技术：对有大多数样本的类进行下采样，使得两类的样本数相差不多
     Note: 这里需要保证所有的方法使用的数据集相同，包括baseline方法和当前提出的方法
     """
-    from random import random
+    from random import random, shuffle
     ratio = category_count_list[0] * 1.0 / category_count_list[1]
     if ratio < 1:
         majority_category = 1
@@ -20,7 +38,7 @@ def down_sampling_dataset(dataset, comment_count_dataset, Bao_dataset, category_
         ratio = 1 / ratio
         majority_category = 0
     else:
-        return dataset, comment_count_dataset, Bao_dataset
+        return dataset, comment_count_dataset, Bao_dataset, category_count_list
     
     selected_index = []
     new_category_count_list = [0, 0]
@@ -29,27 +47,33 @@ def down_sampling_dataset(dataset, comment_count_dataset, Bao_dataset, category_
     # 在测试期间，需要保证训练数据的一致性，所以暂时改变down sampling方法
     majortity_count = 0
     minority_class_count = min(category_count_list[:2])
+    
+    print 'Minority class count:', minority_class_count
     #import ipdb; ipdb.set_trace()
     for i in range(total):
         # TODO: 需要说明的是类别标签信息必须在最后一个item上，否则会出错
         cat = dataset[i][-1]
         assert(cat == 0 or cat == 1)
-        if cat == majority_category: # 只对majortiy class进行处理
-            if random() > ratio: # 未被选中
-                continue
-        """
+        #if cat == majority_category: # 只对majortiy class进行处理
+        #    if random() > ratio: # 未被选中
+        #        continue
+        
         if cat == majority_category:
             majortity_count += 1
             if majortity_count > minority_class_count:
                 continue
-            else:
-                selected_index.append(i)
-        else:   
-            selected_index.append(i)
-        """
+        
         selected_index.append(i)
+        #print 'Select index: %d, cat is %d.' % (i, cat)
+        
         new_category_count_list[cat] += 1
     
+    #shuffle(selected_index)
+    """
+    for i in selected_index:
+        cat = dataset[i][-1]
+        print 'Select index: %d, cat is %d.' % (i, cat)
+    """
     dataset = [dataset[i] for i in selected_index]
     comment_count_dataset = [comment_count_dataset[i] for i in selected_index]
     Bao_dataset = [Bao_dataset[i] for i in selected_index]
