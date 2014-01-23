@@ -53,6 +53,7 @@ def best_match_distance(r, s, delta_max=-1):
     s: the shorter time series
     delta_max: width of sliding window
     """
+    #import ipdb; ipdb.set_trace()
     if len(r) < len(s):
         tmp = r
         r = s
@@ -68,7 +69,7 @@ def best_match_distance(r, s, delta_max=-1):
     min_dis = float('inf')
     T = len(s)
     best_shift = -1
-    for i in range(0, delta_max):
+    for i in range(0, delta_max+1):
         tmp = r[i:i+T]
         dis = Euclidean_distance(tmp, s)
         if dis < min_dis:

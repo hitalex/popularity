@@ -16,8 +16,8 @@ import sklearn.metrics
 import numpy as np
 
 from utils import load_id_list, transform_ts, down_sampling_dataset
-#from score_ranking import score_ranking_knn, get_instance_distance
-from score_ranking_vote import score_ranking_knn, get_instance_distance, caculate_class_prior_confidence_score
+from score_ranking import score_ranking_knn, get_instance_distance
+#from score_ranking_vote import score_ranking_knn, get_instance_distance, caculate_class_prior_confidence_score
 #from instance_prior_weighting import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
 #from instance_prior_weighting2 import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
 from instance_prior_weighting3 import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
@@ -234,7 +234,7 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
             # features: [comment count, mean degree]
             #feature = [current_comment_count, tree_link_density, mean_degree]
             # 当只取current_comment_count作为feature时，相当于简单knn算法
-            feature = [current_comment_count, num_authors, reply_density, tree_link_density]
+            feature = [current_comment_count, num_authors, diffusion_depth, reply_density, mean_degree]
             
             comment_feature_list.append((pubdate, feature))
             # comment_count_list只记录了当前的评论数信息，用于baseline方法计算
@@ -375,6 +375,7 @@ def classify(train_set, test_set, k, num_level, prior_score):
     index = 0
     give_up_list = [] # 放弃预测的列表topic id
     prediction_list = []
+    factor_prediction_list = [0] * len(test_set)
     for test_topic_id, test_ins, true_level in test_set:
         print '\nClassify topic: ', test_topic_id
         if test_topic_id == '':
@@ -382,8 +383,8 @@ def classify(train_set, test_set, k, num_level, prior_score):
             ipdb.set_trace()
         # find k nearest neighbors' levels    
         #nearest_neighbor_level = find_nearest_neighbor_level(test_ins, train_set, k)
-        #nearest_neighbor_level, knn_topic_id, weighted_num_comment = score_ranking_knn(test_ins, train_set, k, prior_score)
-        nearest_neighbor_level, knn_topic_id, weighted_num_comment = weighted_vote_instance_prior(test_ins, train_set, k, prior_score)
+        nearest_neighbor_level, knn_topic_id, weighted_num_comment = score_ranking_knn(test_ins, train_set, k, 1); factor_prediction=0
+        #nearest_neighbor_level, knn_topic_id, weighted_num_comment, factor_prediction = weighted_vote_instance_prior(test_ins, train_set, k, prior_score)
         
         if nearest_neighbor_level == []:
             give_up_list.append(test_topic_id)
@@ -402,6 +403,8 @@ def classify(train_set, test_set, k, num_level, prior_score):
         comment_pred[index] = weighted_num_comment
         prediction_list.append(test_topic_id)
         
+        factor_prediction_list[index] = factor_prediction
+        
         index += 1
     
     y_true          = y_true[:index]
@@ -409,7 +412,7 @@ def classify(train_set, test_set, k, num_level, prior_score):
     y_pred          = y_pred[:index]
     comment_pred    = comment_pred[:index]
     
-    return y_true, y_pred, comment_true, comment_pred, give_up_list, prediction_list
+    return y_true, y_pred, comment_true, comment_pred, give_up_list, prediction_list, factor_prediction_list
     
 def comment_RSE_evaluation(comment_true, comment_pred):
     """ mRES evaluation
@@ -503,6 +506,49 @@ def save_predictions(prediction_list, y_pred, factor_name):
     f.close()
     #f2.close()
     
+def single_factor_prediction(y_true, factor_prediction):
+    """ Single factor predictions and simple vote prediction
+    """
+    test_count = len(y_true)
+    num_level = 2
+    num_factor = len(factor_prediction[0])
+    correct = [0] * num_factor
+    vote_correct = 0
+    for i in range(test_count):
+        pred = factor_prediction[i]
+        vote = np.array([0] * num_level, int)
+        for j in range(num_factor):
+            if pred[j] == y_true[i]:
+                correct[j] += 1
+            vote[pred[j]] += 1
+        
+        vote_pred = np.argmax(vote)
+        if vote_pred == y_true[i]:
+            vote_correct += 1
+    
+    for i in range(num_factor):
+        print 'Factor %d acc: %f' % (i, correct[i]*1.0/test_count)
+        
+    print 'Simple vote acc:', vote_correct*1.0/test_count
+    
+def save_intermediate_results(train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score):
+    """
+    """
+    import pickle
+    print 'Saving train_set, test_set, prior_score...'
+    f = open('popularity.pickle', 'w')
+    pickle.dump([train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score], f)
+    f.close()
+    
+def load_intermediate_results():
+    import pickle
+    print 'Loading train_set, test_set, prior_score...'
+    f = open('popularity.pickle', 'r')
+    train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score = pickle.load(f)
+    f.close()
+    
+    return train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score
+    
 def main(group_id):
 
     topiclist_path = 'data-dynamic/TopicList-' + group_id + '-filtered.txt'
@@ -524,7 +570,7 @@ def main(group_id):
     # 设置采样的间隔
     gaptime = timedelta(hours=5)
     prediction_date = timedelta(hours=10*5)
-    response_time = timedelta(hours=50)
+    response_time = timedelta(hours=25)
     target_date = prediction_date + response_time
     
     print 'Prediction date:', prediction_date.total_seconds() / 60*60
@@ -534,8 +580,10 @@ def main(group_id):
     num_feature = int(prediction_date.total_seconds() / gaptime.total_seconds())
     print 'Number of features: ', num_feature
     
-    alpha = 1.5
     percentage_threshold = 0.7
+    alpha = 1/percentage_threshold
+    
+    """
     print 'Generating training and test dataset...'
     dataset, comment_count_dataset, Bao_dataset, category_count_list = prepare_dataset(group_id, \
         topic_list, gaptime, pop_level, prediction_date, target_date, alpha, percentage_threshold)
@@ -560,6 +608,9 @@ def main(group_id):
     train_set = dataset[:train_cnt]
     test_set = dataset[train_cnt:]
     
+    #train_set = train_set[:50]
+    #tese_set = test_set[:10]
+    
     print 'Training: %d, Test: %d' % (train_cnt, total-train_cnt)
     print 'Category 0: %d, Category 1: %d ' % (category_count_list[0] , category_count_list[1])
     print 'Imbalance ratio: ', category_count_list[0] * 1.0 / category_count_list[1]
@@ -569,6 +620,11 @@ def main(group_id):
     
     #import ipdb
     #ipdb.set_trace()
+    
+    from MDT_method import prepare_MDT_dataset
+    prepare_MDT_dataset(train_set, 'MDT_train.pickle')
+    prepare_MDT_dataset(test_set, 'MDT_test.pickle')
+    #return
         
     print 'The proposed model:'
     k = 3
@@ -584,19 +640,32 @@ def main(group_id):
     prior_score = -1
     prior_score = caculate_instance_prior_confidence_score(train_set, k, num_level = 2)
     
+    # 保存prior-score，train dataset，test-dataset
+    save_intermediate_results(train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score)
+    """
+    k=3; num_level=2
+    train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score = load_intermediate_results()
+    train_cnt = len(train_set)
+    #factor_name_list = ['current_comment_count', 'num_authors', 'tree_density', 'reply_density'] # 需要考察的factor变量
+    #factor_propagation_plot(group_id, train_set+test_set, num_feature, category_count_list, range(4), factor_name_list)
+    #return 
+    
     print 'Classify test instances...'
-    y_true, y_pred, comment_true, comment_pred, give_up_list, prediction_list = classify(train_set, test_set, k, num_level, prior_score)
+    y_true, y_pred, comment_true, comment_pred, give_up_list, prediction_list, factor_prediction = classify(train_set, test_set, k, num_level, prior_score)
     # evaluate results
     print 'Number of give-ups: ', len(give_up_list)
     classification_evaluation(y_true, y_pred)
     level_MSE_evaluation(y_true, y_pred)
-    save_predictions(prediction_list, y_pred, factor_name = 'fourfactor')
+    #save_predictions(prediction_list, y_pred, factor_name = 'fourfactor')
     #save_predictions(prediction_list, y_true, factor_name = 'all')
     
     comment_RSE_evaluation(comment_true, comment_pred)
     
     #print 'The class prior:', prior_score
     
+    print 'Single factor and simple vote prediction result:'
+    single_factor_prediction(y_true, factor_prediction)
+     
     from svm_model import svm_model
     print 'Building a svm model...'
     y_true, y_pred = svm_model(train_set, test_set)
@@ -637,7 +706,12 @@ def main(group_id):
     print "\nBao's method:"
     Bao_train_set = Bao_dataset[:train_cnt]
     Bao_test_set = Bao_dataset[train_cnt:]
-    y_true, y_pred, comment_true_cnt, comment_pred_cnt = Bao_method(Bao_train_set, Bao_test_set, alpha)
+    print 'With link density:'
+    y_true, y_pred, comment_true_cnt, comment_pred_cnt = Bao_method(Bao_train_set, Bao_test_set, alpha, version = 1)
+    comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)
+    classification_evaluation(y_true, y_pred)
+    print 'With diffusion depth:'
+    y_true, y_pred, comment_true_cnt, comment_pred_cnt = Bao_method(Bao_train_set, Bao_test_set, alpha, version = 2)
     comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)
     classification_evaluation(y_true, y_pred)
     

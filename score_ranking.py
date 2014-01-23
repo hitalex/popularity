@@ -33,7 +33,7 @@ def get_instance_distance(test_ins, train_ins, findex):
         vec2[i-1] = train_ins[i][findex]
         
     #dis = DTW_distance(vec1, vec2)
-    dis = best_match_distance(vec1, vec2, 10)
+    dis = best_match_distance(vec1, vec2, 0)
     
     return dis
         
@@ -113,7 +113,7 @@ def score_ranking_knn(test_ins, train_set, k, gamma = 1):
         topic_score_feature = dict(topic_score)
         distance_comment_list = [0] * train_count
         index = 0
-        #import ipdb, ipdb.set_trace()
+        #import ipdb; ipdb.set_trace()
         for train_topic_id, train_ins, level in train_set:
             # 程序的瓶颈：计算两个ts的距离
             dis = get_instance_distance(test_ins, train_ins, findex)

@@ -63,8 +63,9 @@ def LSM_method(train_set, test_set, num_feature, alpha):
         s = x_test[i, :] = transform_ts(x_test[i, :])
         
     
-def Bao_method(train_set, test_set, alpha):
+def Bao_method(train_set, test_set, alpha, version):
     """ WWW'13: Popularity Prediction in Microblogging Network: A Case Study on Sina Weibo
+    version: 1: with link density; 2: with diffusion depth
     注：文章中实际上提出两个模型，分别使用了link density和diffusion depth作为特征，进行回归
     """
     #import ipdb; ipdb.set_trace()
@@ -95,8 +96,11 @@ def Bao_method(train_set, test_set, alpha):
             prediction_link_density, prediction_diffusion_depth, cat in test_set:
         
         x_test[index, 0] = log(prediction_comment_count)
-        #x_test[index, 1] = log(prediction_link_density)
-        x_test[index, 1] = prediction_diffusion_depth
+        if version == 1:
+            x_test[index, 1] = log(prediction_link_density)
+        else:
+            x_test[index, 1] = prediction_diffusion_depth
+            
         y_test[index] = log(target_comment_count)
         index += 1
         

@@ -38,7 +38,7 @@ def get_instance_distance(test_ins, train_ins, findex):
         vec2[i-1] = train_ins[i][findex]
         
     #dis = DTW_distance(vec1, vec2)
-    dis = best_match_distance(vec1, vec2, 20)
+    dis = best_match_distance(vec1, vec2, 0)
     
     return dis
     
@@ -170,6 +170,7 @@ def get_knn_level_list_old(distance_comment_list, k, level_count):
     这样做的好处是：统一了计算方法，但最终的得到的近邻数可能大于k
     Note: 这里确保包括两类近邻，可能最终得到的近邻数大约k
     """
+    #import ipdb; ipdb.set_trace()
     knn_dis = [0] * len(distance_comment_list)
     level_count_list = [0] * level_count
     knn_dis_count = [0] * len(distance_comment_list)
@@ -196,7 +197,6 @@ def get_knn_level_list_old(distance_comment_list, k, level_count):
             knn_dis[current_k_index] = dis
             
     total = knn_dis_count[current_k_index - 1] + 1
-    #import ipdb; ipdb.set_trace()
     
     knn_level_list = [0] * total
     level_count_list = [0] * level_count
@@ -291,6 +291,7 @@ def factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level
         
         Z[level] += weight
         if with_prior_flag: # 如果已经传递了先验信息
+            #import ipdb; ipdb.set_trace()
             level_confidence_score[level] += weight
             # 计算每个instance在这个factor下的level prior score
             level_prior = prior_score[topic_id]
@@ -302,8 +303,15 @@ def factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level
     level_confidence_score /= sum(Z)
     # 在不同factor下的level confidence下加入level_prior_score信息
     if with_prior_flag:
-        level_prior_score[0] /= Z[0]
-        level_prior_score[1] /= Z[1]
+        if Z[0] > 0:
+            level_prior_score[0] /= Z[0]
+        else:
+            level_prior_score[0] = 0
+            
+        if Z[1] > 0:
+            level_prior_score[1] /= Z[1]
+        else:
+            level_prior_score[1] = 0
         # 归一化， 此时 level_prior_score 的作用和level_confidence_score相同，只不过包含了先验信息
         level_prior_score /= np.sum(level_prior_score)
         
@@ -337,7 +345,7 @@ def weighted_vote_instance_prior(test_ins, train_set, k, prior_score = -1, gamma
         factor_confidence_score[findex, :] , level_prior_score[findex, :] = factor_score_knn(findex, test_ins, \
             train_set, topic_popularity, k, num_level, prior_score, gamma)
         
-
+    
     #print '\nOverall score list: ', knn_list_all
     print 'Factor confidence:\n', factor_confidence_score
     print 'prediction: ', np.sum(factor_confidence_score, axis=0)
@@ -346,7 +354,13 @@ def weighted_vote_instance_prior(test_ins, train_set, k, prior_score = -1, gamma
     print 'Factor confidence:\n', level_prior_score
     print 'prediction: ', np.sum(level_prior_score, axis=0)
     
+    # 存储每个factor的预测结果
+    factor_prediction = [-1] * num_factor
+    for i in range(num_factor):
+        pred = np.argmax(factor_confidence_score[i, :])
+        factor_prediction[i] = pred
+    
     prediction_level, confidence_score = confidence_score_prediction(level_prior_score)
     #print 'Overall prediction: %d with confidence: %f' % (prediction_level, confidence_score)
     
-    return [prediction_level], '', 0
+    return [prediction_level], '', 0, factor_prediction

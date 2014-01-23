@@ -113,7 +113,7 @@ def main(group_id):
             feature_dict['cid'] = cid
             feature_dict['pid'] = pid
             feature_dict['pubdate'] = pubdate
-            feature_dict['replyto'] = replyto
+            feature_dict['replyto'] = replyto # 回复的comment的cid
             
             comment_dict[cid] = comment_tree.vcount()
             comment_tree.add_vertex(cid, date=pubdate, author=lz)
@@ -160,7 +160,11 @@ def main(group_id):
             
             # 如果是回复自己，则忽略
             if pid != replyto_pid:
-                author_reply.add_edge(pid, replyto_pid)
+                # 如果 pid指向replyto_pid已经有链接，则不考虑再次添加
+                v1 = author_dict[pid]
+                v2 = author_dict[replyto_pid]
+                if author_reply.get_eid(v1, v2, directed=True, error=False) == -1:
+                    author_reply.add_edge(v1, v2)
             
             # number of participating commenters
             num_authors = author_reply.vcount()
@@ -223,8 +227,8 @@ def main(group_id):
             tf.write(str(feature_dict) + '\n')
 
         # print dynamic feature
-        #plot(comment_tree)
-        #plot(author_reply)
+        plot(comment_tree)
+        plot(author_reply)
         
         #ipdb.set_trace()
         

@@ -19,7 +19,7 @@ def my_min_max_scaler(data, a=0, b=1.0):
     max_value = max(data)
     
     if min_value == max_value:
-        return [0] * data
+        return [0] * count
         
     for i in range(count):
         data[i] = (b-a) * (data[i] - min_value) * 1.0 / (max_value - min_value)
@@ -68,7 +68,7 @@ def down_sampling_dataset(dataset, comment_count_dataset, Bao_dataset, category_
         
         new_category_count_list[cat] += 1
     
-    #shuffle(selected_index)
+    shuffle(selected_index)
     """
     for i in selected_index:
         cat = dataset[i][-1]
@@ -107,16 +107,18 @@ def ratio_accuracy_distribution_plot(y_true, y_pred, test_set, group_id, factor_
     n, bins, patches = plt.hist(ratio_list, bins=bin_range, normed=0, facecolor='green', alpha=0.5)
     plt.show()
     
-def transform_ts(p, alpha = 1.2, T_smooth = 3):
+def transform_ts(sp, alpha = 1.2, T_smooth = 3):
     """ 按照NIPS'13文章中的预处理方法处理单个ts
     alpha: how to emphasize the large spikes
     T_smooth: the smoothing parameter
     """
+    #import ipdb; ipdb.set_trace()
+    
     import numpy as np
     import math
-    count = len(p)
+    count = len(sp)
     # extend the array
-    p = np.array(p, float)
+    p = np.array(sp, float)
     p = np.insert(p, 0, 0)
     
     tmp = [p[i] - p[i-1] for i in range(1, count+1)]
