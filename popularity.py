@@ -101,10 +101,15 @@ def get_topic_category(thread_pubdate, comment_feature_list, threshold):
 def get_comment_percentage_category(target_comment, prediction_comment_count, percentage_threshold = 0.6):
     """ 分类标准：某个帖子在prediction_date_point时的comment数是否已经占所有comment总数的percentage_threshold
     """
-    if target_comment > VIRAL_MIN_COMMENT and prediction_comment_count * 1.0 / target_comment <= percentage_threshold:
+    # 这样只选择那些处于p1和p2两边的帖子，保证两类能够很好的分开
+    p1 = 0.3
+    p2 = 0.7
+    if target_comment > VIRAL_MIN_COMMENT and prediction_comment_count * 1.0 / target_comment <= p1:
         cat = 1
-    else:
+    elif prediction_comment_count * 1.0 / target_comment >= p2:
         cat = 0
+    else:
+        cat = -1
         
     return cat
     
@@ -273,7 +278,9 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         #cat = get_topic_category(thread_pubdate, comment_feature_list, percentage_threshold)
         cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold)
         #cat = get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold)
-        
+        if cat < 0:
+            continue
+            
         category_count_list[cat] += 1
         # first feature vector，记录其他信息
         topic_feature.insert(0, [0, 0, 0, 0, 0])
@@ -383,8 +390,8 @@ def classify(train_set, test_set, k, num_level, prior_score):
             ipdb.set_trace()
         # find k nearest neighbors' levels    
         #nearest_neighbor_level = find_nearest_neighbor_level(test_ins, train_set, k)
-        nearest_neighbor_level, knn_topic_id, weighted_num_comment = score_ranking_knn(test_ins, train_set, k, 1); factor_prediction=0
-        #nearest_neighbor_level, knn_topic_id, weighted_num_comment, factor_prediction = weighted_vote_instance_prior(test_ins, train_set, k, prior_score)
+        #nearest_neighbor_level, knn_topic_id, weighted_num_comment = score_ranking_knn(test_ins, train_set, k, 1); factor_prediction=0
+        nearest_neighbor_level, knn_topic_id, weighted_num_comment, factor_prediction = weighted_vote_instance_prior(test_ins, train_set, k, prior_score)
         
         if nearest_neighbor_level == []:
             give_up_list.append(test_topic_id)
@@ -531,19 +538,19 @@ def single_factor_prediction(y_true, factor_prediction):
         
     print 'Simple vote acc:', vote_correct*1.0/test_count
     
-def save_intermediate_results(train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score):
+def save_intermediate_results(train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score, fold_index):
     """
     """
     import pickle
     print 'Saving train_set, test_set, prior_score...'
-    f = open('popularity.pickle', 'w')
+    f = open('popularity-%d.pickle' % fold_index, 'w')
     pickle.dump([train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score], f)
     f.close()
     
-def load_intermediate_results():
+def load_intermediate_results(fold_index):
     import pickle
     print 'Loading train_set, test_set, prior_score...'
-    f = open('popularity.pickle', 'r')
+    f = open('popularity-%d.pickle' % fold_index, 'r')
     train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score = pickle.load(f)
     f.close()
     
@@ -583,7 +590,6 @@ def main(group_id):
     percentage_threshold = 0.7
     alpha = 1/percentage_threshold
     
-    """
     print 'Generating training and test dataset...'
     dataset, comment_count_dataset, Bao_dataset, category_count_list = prepare_dataset(group_id, \
         topic_list, gaptime, pop_level, prediction_date, target_date, alpha, percentage_threshold)
@@ -597,123 +603,132 @@ def main(group_id):
     print 'Down-sampling the datasets...'
     dataset, comment_count_dataset, Bao_dataset, category_count_list = down_sampling_dataset(dataset, \
         comment_count_dataset, Bao_dataset, category_count_list)
+    print 'Category 0: %d, Category 1: %d ' % (category_count_list[0] , category_count_list[1])
+    print 'Imbalance ratio: ', category_count_list[0] * 1.0 / category_count_list[1]
     
     # 调整所有帖子的顺序
     # 在调试阶段，暂且不shuffle dataset，避免每次结果都不一样
     #shuffle(dataset)
     
     # 注意：每次使用的数据集是不同的
+    #dataset = dataset[:60]
+    
     total = len(dataset)
-    train_cnt = total * 4 / 5
-    train_set = dataset[:train_cnt]
-    test_set = dataset[train_cnt:]
-    
-    #train_set = train_set[:50]
-    #tese_set = test_set[:10]
-    
-    print 'Training: %d, Test: %d' % (train_cnt, total-train_cnt)
-    print 'Category 0: %d, Category 1: %d ' % (category_count_list[0] , category_count_list[1])
-    print 'Imbalance ratio: ', category_count_list[0] * 1.0 / category_count_list[1]
-    #num_level = len(pop_level)
-    #save_filtered_topics(group_id, dataset)
-    #raw_input()
-    
-    #import ipdb
-    #ipdb.set_trace()
-    
-    from MDT_method import prepare_MDT_dataset
-    prepare_MDT_dataset(train_set, 'MDT_train.pickle')
-    prepare_MDT_dataset(test_set, 'MDT_test.pickle')
-    #return
+    # 将所有的数据集分成5份，每次用其中的4份用于训练，剩下的一份用于测试
+    from sklearn import cross_validation
+    kf = cross_validation.KFold(total, n_folds=5)
+    fold_index = 0
+    for train_index, test_index in kf:
+        print 'Fold index:', fold_index
+        #import ipdb; ipdb.set_trace()
+        train_set = [dataset[i] for i in train_index]
+        test_set = [dataset[i] for i in test_index]
+        train_cnt = len(train_set)
         
-    print 'The proposed model:'
-    k = 3
-    num_level = 2
-    num_factor = len(train_set[0][1][1])
-    
-    #print 'Caculating class prior score...'
-    #prior_score = np.ones((num_factor, num_level)) # 初始化
-    #prior_score = caculate_class_prior_confidence_score(train_set, k, num_level = 2)
-    #print prior_score; raw_input()
-    
-    print 'Caculating instance prior score...'
-    prior_score = -1
-    prior_score = caculate_instance_prior_confidence_score(train_set, k, num_level = 2)
-    
-    # 保存prior-score，train dataset，test-dataset
-    save_intermediate_results(train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score)
-    """
-    k=3; num_level=2
-    train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score = load_intermediate_results()
-    train_cnt = len(train_set)
-    #factor_name_list = ['current_comment_count', 'num_authors', 'tree_density', 'reply_density'] # 需要考察的factor变量
-    #factor_propagation_plot(group_id, train_set+test_set, num_feature, category_count_list, range(4), factor_name_list)
-    #return 
-    
-    print 'Classify test instances...'
-    y_true, y_pred, comment_true, comment_pred, give_up_list, prediction_list, factor_prediction = classify(train_set, test_set, k, num_level, prior_score)
-    # evaluate results
-    print 'Number of give-ups: ', len(give_up_list)
-    classification_evaluation(y_true, y_pred)
-    level_MSE_evaluation(y_true, y_pred)
-    #save_predictions(prediction_list, y_pred, factor_name = 'fourfactor')
-    #save_predictions(prediction_list, y_true, factor_name = 'all')
-    
-    comment_RSE_evaluation(comment_true, comment_pred)
-    
-    #print 'The class prior:', prior_score
-    
-    print 'Single factor and simple vote prediction result:'
-    single_factor_prediction(y_true, factor_prediction)
-     
-    from svm_model import svm_model
-    print 'Building a svm model...'
-    y_true, y_pred = svm_model(train_set, test_set)
-    classification_evaluation(y_true, y_pred)
+        print 'Training: %d, Test: %d' % (train_cnt, total-train_cnt)
+        #num_level = len(pop_level)
+        #save_filtered_topics(group_id, dataset)
+        #raw_input()
+        
+        #import ipdb
+        #ipdb.set_trace()
+        
+        from MDT_method import prepare_MDT_dataset
+        prepare_MDT_dataset(train_set, 'MDT_train-%d.pickle' % fold_index)
+        prepare_MDT_dataset(test_set, 'MDT_test-%d.pickle' % fold_index)
+        #return
+            
+        print 'The proposed model:'
+        k = 3
+        num_level = 2
+        num_factor = len(train_set[0][1][1])
+        
+        #print 'Caculating class prior score...'
+        #prior_score = np.ones((num_factor, num_level)) # 初始化
+        #prior_score = caculate_class_prior_confidence_score(train_set, k, num_level = 2)
+        #print prior_score; raw_input()
+        
+        print 'Caculating instance prior score...'
+        prior_score = -1
+        prior_score = caculate_instance_prior_confidence_score(train_set, k, num_level = 2)
+        
+        # 保存prior-score，train dataset，test-dataset
+        save_intermediate_results(train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score, fold_index)
+        
+        k=3; num_level=2
+        train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score = load_intermediate_results(fold_index)
+        train_cnt = len(train_set)
+        #factor_name_list = ['current_comment_count', 'num_authors', 'tree_density', 'reply_density'] # 需要考察的factor变量
+        #factor_propagation_plot(group_id, train_set+test_set, num_feature, category_count_list, range(4), factor_name_list)
+        #return 
+        
+        print 'Classify test instances...'
+        y_true, y_pred, comment_true, comment_pred, give_up_list, prediction_list, factor_prediction \
+            = classify(train_set, test_set, k, num_level, prior_score)
+        # evaluate results
+        print 'Number of give-ups: ', len(give_up_list)
+        classification_evaluation(y_true, y_pred)
+        level_MSE_evaluation(y_true, y_pred)
+        #save_predictions(prediction_list, y_pred, factor_name = 'fourfactor')
+        #save_predictions(prediction_list, y_true, factor_name = 'all')
+        
+        comment_RSE_evaluation(comment_true, comment_pred)
+        
+        #print 'The class prior:', prior_score
+        
+        print 'Single factor and simple vote prediction result:'
+        single_factor_prediction(y_true, factor_prediction)
+         
+        from svm_model import svm_model
+        print 'Building a svm model...'
+        y_true, y_pred = svm_model(train_set, test_set)
+        classification_evaluation(y_true, y_pred)
 
-    # 查看对于不同的factor，它们在不同的ratio上的预测结果
-    from utils import ratio_accuracy_distribution_plot
-    #ratio_accuracy_distribution_plot(y_true, y_pred, test_set, group_id, factor_name='tree_link_density')
-    
-    # S-H model
-    print '\nThe S-H model:'
-    baseline_train_set = comment_count_dataset[:train_cnt]
-    baseline_test_set = comment_count_dataset[train_cnt:]
-    y_true, y_pred, comment_true_cnt, comment_pred_cnt = SH_model(baseline_train_set, baseline_test_set, alpha)
-    # drop some intances with cat = 0
-    comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)    
-    # level wise classification
-    classification_evaluation(y_true, y_pred)
-    level_MSE_evaluation(y_true, y_pred)
-    
-    print '\nML model:'
-    y_true, y_pred, comment_true_cnt, comment_pred_cnt = ML_model(baseline_train_set, baseline_test_set, num_feature, alpha)
-    comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)
-    classification_evaluation(y_true, y_pred)
-    
-    print '\nMLR model:'
-    y_true, y_pred, comment_true_cnt, comment_pred_cnt = MLR_model(baseline_train_set, baseline_test_set, num_feature, alpha)
-    comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)
-    classification_evaluation(y_true, y_pred)
-    
-    print '\nkNN method:'
-    k = 1
-    y_true, y_pred, comment_true_cnt, comment_pred_cnt = knn_method(train_set, test_set, k, num_feature, alpha)
-    comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)    
-    # level wise classification
-    classification_evaluation(y_true, y_pred)
-    
-    print "\nBao's method:"
-    Bao_train_set = Bao_dataset[:train_cnt]
-    Bao_test_set = Bao_dataset[train_cnt:]
-    print 'With link density:'
-    y_true, y_pred, comment_true_cnt, comment_pred_cnt = Bao_method(Bao_train_set, Bao_test_set, alpha, version = 1)
-    comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)
-    classification_evaluation(y_true, y_pred)
-    print 'With diffusion depth:'
-    y_true, y_pred, comment_true_cnt, comment_pred_cnt = Bao_method(Bao_train_set, Bao_test_set, alpha, version = 2)
-    comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)
-    classification_evaluation(y_true, y_pred)
+        # 查看对于不同的factor，它们在不同的ratio上的预测结果
+        from utils import ratio_accuracy_distribution_plot
+        #ratio_accuracy_distribution_plot(y_true, y_pred, test_set, group_id, factor_name='tree_link_density')
+        
+        # S-H model
+        print '\nThe S-H model:'
+        baseline_train_set = [comment_count_dataset[i] for i in train_index]
+        baseline_test_set = [comment_count_dataset[i] for i in test_index]
+        y_true, y_pred, comment_true_cnt, comment_pred_cnt = SH_model(baseline_train_set, baseline_test_set, alpha)
+        # drop some intances with cat = 0
+        comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)    
+        # level wise classification
+        classification_evaluation(y_true, y_pred)
+        level_MSE_evaluation(y_true, y_pred)
+        
+        print '\nML model:'
+        y_true, y_pred, comment_true_cnt, comment_pred_cnt = ML_model(baseline_train_set, baseline_test_set, num_feature, alpha)
+        comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)
+        classification_evaluation(y_true, y_pred)
+        
+        print '\nMLR model:'
+        y_true, y_pred, comment_true_cnt, comment_pred_cnt = MLR_model(baseline_train_set, baseline_test_set, num_feature, alpha)
+        comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)
+        classification_evaluation(y_true, y_pred)
+        
+        print '\nkNN method:'
+        k = 1
+        y_true, y_pred, comment_true_cnt, comment_pred_cnt = knn_method(train_set, test_set, k, num_feature, alpha)
+        comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)    
+        # level wise classification
+        classification_evaluation(y_true, y_pred)
+        
+        print "\nBao's method:"
+        Bao_train_set = [Bao_dataset[i] for i in train_index]
+        Bao_test_set = [Bao_dataset[i] for i in test_index]
+        print 'With link density:'
+        y_true, y_pred, comment_true_cnt, comment_pred_cnt = Bao_method(Bao_train_set, Bao_test_set, alpha, version = 1)
+        comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)
+        classification_evaluation(y_true, y_pred)
+        print 'With diffusion depth:'
+        y_true, y_pred, comment_true_cnt, comment_pred_cnt = Bao_method(Bao_train_set, Bao_test_set, alpha, version = 2)
+        comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)
+        classification_evaluation(y_true, y_pred)
+        
+        fold_index += 1
     
 if __name__ == '__main__':
     import sys
