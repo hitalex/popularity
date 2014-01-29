@@ -102,8 +102,8 @@ def get_comment_percentage_category(target_comment, prediction_comment_count, pe
     """ 分类标准：某个帖子在prediction_date_point时的comment数是否已经占所有comment总数的percentage_threshold
     """
     # 这样只选择那些处于p1和p2两边的帖子，保证两类能够很好的分开
-    p1 = 0.3
-    p2 = 0.7
+    p1 = 0.5
+    p2 = 0.5
     if target_comment > VIRAL_MIN_COMMENT and prediction_comment_count * 1.0 / target_comment <= p1:
         cat = 1
     elif prediction_comment_count * 1.0 / target_comment >= p2:
@@ -543,14 +543,14 @@ def save_intermediate_results(train_set, test_set, comment_count_dataset, Bao_da
     """
     import pickle
     print 'Saving train_set, test_set, prior_score...'
-    f = open('popularity-%d.pickle' % fold_index, 'w')
+    f = open('pickle/popularity-%d.pickle' % fold_index, 'w')
     pickle.dump([train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score], f)
     f.close()
     
 def load_intermediate_results(fold_index):
     import pickle
     print 'Loading train_set, test_set, prior_score...'
-    f = open('popularity-%d.pickle' % fold_index, 'r')
+    f = open('pickle/popularity-%d.pickle' % fold_index, 'r')
     train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score = pickle.load(f)
     f.close()
     
@@ -634,8 +634,8 @@ def main(group_id):
         #ipdb.set_trace()
         
         from MDT_method import prepare_MDT_dataset
-        prepare_MDT_dataset(train_set, 'MDT_train-%d.pickle' % fold_index)
-        prepare_MDT_dataset(test_set, 'MDT_test-%d.pickle' % fold_index)
+        prepare_MDT_dataset(train_set, 'pickle/MDT_train-%d.pickle' % fold_index)
+        prepare_MDT_dataset(test_set, 'pickle/MDT_test-%d.pickle' % fold_index)
         #return
             
         print 'The proposed model:'
