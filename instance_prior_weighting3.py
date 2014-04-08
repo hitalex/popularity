@@ -10,6 +10,8 @@
     2.1 对于近邻列表，分别计算每个vote的weight值，按照distance计算（如果距离都相同，则都为1）
     2.2 分别对于两个类别，统计每个类别的总weight数，即得到此factor对于每个类别的信心值（注意此时无需判断is_trusted）
 3, 对于所有的factor，分别对两类的信心值相加，则得到总的信心值。取两者之间较高的那个。
+
+Note: CCDM2014论文的算法版本
 """
 import numpy as np
 
@@ -45,12 +47,13 @@ def get_instance_distance(test_ins, train_ins, findex):
 def caculate_instance_prior_confidence_score(train_set, k, num_level = 2):
     """ 在holdout dataset(或者训练集)中计算每个instance在每个dynamic factor的先验信心分数
     """
-    import random
+    #import ipdb; ipdb.set_trace()
     num_factor = len(train_set[0][1][1]) # get the number of factors
     topic_popularity = dict()    # topic_id ==> (level, comment_count)
     for train_topic_id, train_ins, level in train_set:
         target_comment_count = train_ins[0][0]
         prediction_comment_count = train_ins[0][4]
+        # ratio的值不小于1
         ratio = target_comment_count * 1.0 / prediction_comment_count
         topic_popularity[train_topic_id] = (level, target_comment_count, prediction_comment_count, ratio)
     
@@ -71,7 +74,6 @@ def caculate_instance_prior_confidence_score(train_set, k, num_level = 2):
         
         pred_level_list = [0] * num_factor
         num_correct = 0 # 得出正确结果的factor的个数
-        
         for findex in range(num_factor):
             # predict based on confidence
             pred_level_list[findex] = pred_level = np.argmax(score_matrix[findex, :])
@@ -80,11 +82,12 @@ def caculate_instance_prior_confidence_score(train_set, k, num_level = 2):
                 pass
             else:
                 num_correct += 1
-                factor_correct_count[findex] += 1
+                factor_correct_count[findex] += 1 # 每个factor预测正确的样本个数
         
         # 计算先验，满足两个要求
         # 每个instance都保存有某个factor对其分类结果的信息，如果分类正确，则权重大于1，如果分类错误，则小于1
         level_prior = np.ones((num_factor, )) # prior for classes(levels)
+        
         # 在factor之间之间进行区别：例如如果只有一个factor预测正确，那么奖励会更多
         delta = 1.0
         if num_correct == 0:
@@ -94,12 +97,13 @@ def caculate_instance_prior_confidence_score(train_set, k, num_level = 2):
         
         rho = 3
         for findex in range(num_factor):
+            # 预测两类的信心值之差
             diff_score = abs(score_matrix[findex, 0] - score_matrix[findex, 1])
             if pred_level_list[findex] != true_level:
                 tmp = math.exp(-1 * rho * diff_score)
             else:
                 tmp = math.exp(+1 * rho * diff_score)
-                
+
             # 另外一层考虑：例如如果只有一个factor预测正确，则奖励会更多
             if pred_level_list[findex] == true_level:
                 tmp *= math.exp(correct_reward)
@@ -168,7 +172,7 @@ def get_knn_level_list_old(distance_comment_list, k, level_count):
     """ 获取k近邻的level标签
     注意：有可能同一个距离有多个近邻，这时考虑的其实是前k个距离的所有近邻（与之前的计算方法不同）
     这样做的好处是：统一了计算方法，但最终的得到的近邻数可能大于k
-    Note: 这里确保包括两类近邻，可能最终得到的近邻数大约k
+    Note: 这里确保包括两类近邻，可能最终得到的近邻数大于k
     """
     #import ipdb; ipdb.set_trace()
     knn_dis = [0] * len(distance_comment_list)
@@ -273,7 +277,7 @@ def factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level
     
     # use the min-max normalizer
     dis_list = my_min_max_scaler(dis_list)
-    print 'Transformed distance list:', dis_list
+    #print 'Transformed distance list:', dis_list
     #import ipdb; ipdb.set_trace()
     Z = [0] * 2
     gamma = 1
@@ -281,7 +285,7 @@ def factor_score_knn(findex, test_ins, train_set, topic_popularity, k, num_level
         topic_id = knn_list[i][0]
         #dis = knn_list[i][1]
         level = knn_list[i][4]
-        dis = dis_list[i]
+        dis = dis_list[i] # 使用归一化的距离
         
         try:
             weight = math.exp(-gamma * dis)

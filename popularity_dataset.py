@@ -218,6 +218,7 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
             diffusion_depth         = feature_dict['diffusion_depth']
             avg_weighted_depth_sum  = feature_dict['avg_weighted_depth_sum']
             tree_link_density       = feature_dict['tree_density']
+            avg_path_length         = feature_dict['avg_path_length']
             #author_reply_max_cohesions = feature_dict['author_reply_max_cohesions']
             
             # comment_author two-mode network
@@ -258,7 +259,6 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
             
         # 如果最后一个评论的时间还不到target date，则不考虑这些帖子
         if not target_date_flag:
-            
             continue
             
         # 接下来将comment_feature_list转换为topic_feature
@@ -309,7 +309,7 @@ def save_filtered_topics(group_id, dataset):
     #import ipdb; ipdb.set_trace()
     import os
     base_path = '/home/kqc/Dropbox/projects/popularity/'
-    dir_path = 'data-dynamic/kong2/'
+    dir_path = 'data-dynamic/kong/'
     
     path = 'data-dynamic/TopicList-' + group_id + '-filtered.txt'
     f = open(path, 'w')
@@ -318,7 +318,7 @@ def save_filtered_topics(group_id, dataset):
         #ft.write(topic_id + '\n')
         
         spath = base_path + 'data-dynamic/' + group_id + '/' + topic_id + '.txt'
-        tpath = base_path + 'data-dynamic/' + 'kong2' + '/' + topic_id + '.txt'
+        tpath = base_path + 'data-dynamic/' + 'kong' + '/' + topic_id + '.txt'
         args = '/bin/cp ' + spath + ' ' + tpath
         # 将topic信息文件复制到目标文件
         #os.popen(args)
@@ -331,14 +331,14 @@ def main(group_id):
     topiclist_path = 'data-dynamic/TopicList-' + group_id + '-shuffled.txt'
     topic_list = load_id_list(topiclist_path)
     print 'Number of total topics loaded: ', len(topic_list)
-    pop_level = [25, 50, float('inf')]  # group: zhuangb
+    pop_level = [25, 50, float('inf')]  
     
     # prediction_date 的含义为：在帖子发布 prediction_date 时间后，开始预测
     # target_date 的含义为：预测在 target_date 处的评论数量
     # 以上两个参数可以调节
     # 设置采样的间隔
     gaptime = timedelta(hours=5)
-    prediction_date = timedelta(hours=15*5)
+    prediction_date = timedelta(hours=15*2)
     response_time = timedelta(hours=50)
     target_date = prediction_date + response_time
     
@@ -383,7 +383,7 @@ def main(group_id):
     print 'Category 0: %d, Category 1: %d ' % (category_count_list[0] , category_count_list[1])
     print 'Imbalance ratio: ', category_count_list[0] * 1.0 / category_count_list[1]
 
-    save_filtered_topics(group_id, dataset)
+    #save_filtered_topics(group_id, dataset)
     
 if __name__ == '__main__':
     import sys

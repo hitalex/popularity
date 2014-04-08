@@ -234,3 +234,28 @@ def load_topic_level(file_path):
     f.close()
     return topic_level, level_count, y_pred
     
+def prepare_kong_topics():
+    """ 根据group_id为kong的topic list，复制topic信息到data-dynamic/kong/文件夹中
+    """
+    import os
+    path = 'data-dynamic/TopicList-kong-shuffled.txt'
+    f = open(path, 'r')
+    for topic_id in f:
+        topic_id = topic_id.strip()
+        path_kong = 'data-dynamic/kong/' + topic_id + '.txt'
+        path_qiong = 'data-dynamic/qiong/' + topic_id + '.txt'
+        path_buybook = 'data-dynamic/buybook/' + topic_id + '.txt'
+        path_zhuangb = 'data-dynamic/zhuangb/' + topic_id + '.txt'
+        if os.path.exists(path_qiong):
+            args = '/bin/cp ' + path_qiong + ' ' + path_kong
+            os.popen(args)
+        elif os.path.exists(path_buybook):
+            args = '/bin/cp ' + path_buybook + ' ' + path_kong
+            os.popen(args)
+        elif os.path.exists(path_zhuangb):
+            args = '/bin/cp ' + path_zhuangb + ' ' + path_kong
+            os.popen(args)
+        else:
+            print 'Topic: %s not found!' % topic_id
+            
+    f.close()

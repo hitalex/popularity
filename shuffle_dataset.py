@@ -7,8 +7,7 @@ import random
 
 from utils import load_id_list
 
-def main():
-    group_id = 'kong2'
+def main(group_id):
     topiclist_path = 'data-dynamic/TopicList-' + group_id + '-shuffled.txt'
     topic_list = load_id_list(topiclist_path)
     random.shuffle(topic_list)
@@ -20,4 +19,7 @@ def main():
     f.close()
 
 if __name__ == '__main__':
-    main()
+    import sys
+    group_id = sys.argv[1]
+    
+    main(group_id)

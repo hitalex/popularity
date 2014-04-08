@@ -10,6 +10,7 @@
     2.1 对于近邻列表，分别计算每个vote的weight值，按照distance计算（如果距离都相同，则都为1）
     2.2 分别对于两个类别，统计每个类别的总weight数，即得到此factor对于每个类别的信心值（注意此时无需判断is_trusted）
 3, 对于所有的factor，分别对两类的信心值相加，则得到总的信心值。取两者之间较高的那个。
+
 """
 import numpy as np
 
@@ -47,7 +48,7 @@ def caculate_instance_prior_confidence_score(train_set, k, num_level = 2):
     """
     import random
     num_factor = len(train_set[0][1][1]) # get the number of factors
-    topic_popularity = dict()    # topic_id ==> (level, comment_count)
+    topic_popularity = dict()    # topic_id ==> (level, target_comment_count, prediction_comment_count, ratio)
     for train_topic_id, train_ins, level in train_set:
         target_comment_count = train_ins[0][0]
         prediction_comment_count = train_ins[0][4]
