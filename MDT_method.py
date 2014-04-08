@@ -265,10 +265,10 @@ def prepare_MDT_dataset(dataset, dumpfile):
     
 if __name__ == '__main__':
     print 'Loading the train and test data...'
-    f = open('MDT_train.pickle', 'r')
+    f = open('pickle/MDT_train.pickle', 'r')
     train_dataset = pickle.load(f)
     f.close()
-    f = open('MDT_test.pickle', 'r')
+    f = open('pickle/MDT_test.pickle', 'r')
     test_dataset = pickle.load(f)
     f.close()
     

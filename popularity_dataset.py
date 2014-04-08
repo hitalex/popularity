@@ -95,13 +95,18 @@ def get_topic_category(thread_pubdate, comment_feature_list, threshold):
            
     return cat
     
-def get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold = 0.6):
+def get_comment_percentage_category(target_comment, prediction_comment_count, percentage_threshold = 0.6):
     """ 分类标准：某个帖子在prediction_date_point时的comment数是否已经占所有comment总数的percentage_threshold
     """
-    if total_comment > VIRAL_MIN_COMMENT and prediction_comment_count * 1.0 / total_comment <= percentage_threshold:
+    # 这样只选择那些处于p1和p2两边的帖子，保证两类能够很好的分开
+    p1 = 0.3
+    p2 = 0.7
+    if target_comment > VIRAL_MIN_COMMENT and prediction_comment_count * 1.0 / target_comment <= p1:
         cat = 1
-    else:
+    elif prediction_comment_count * 1.0 / target_comment >= p2:
         cat = 0
+    else:
+        cat = -1
         
     return cat
     
@@ -270,7 +275,8 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         #cat = get_topic_category(thread_pubdate, comment_feature_list, percentage_threshold)
         cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold)
         #cat = get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold)
-        
+        if cat < 0:
+            continue
         category_count_list[cat] += 1
         # first feature vector，记录其他信息
         topic_feature.insert(0, [0, 0, 0, 0, 0])

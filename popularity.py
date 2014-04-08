@@ -265,17 +265,17 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         # 如果最后一个评论的时间还不到target date，则不考虑这些帖子
         if not target_date_flag:
             target_comment_count = current_comment_count
-            continue  #当分类标准为comment_percentage的total comment count时，应该注释此句
+            #continue  #当分类标准为comment_percentage的total comment count时，应该注释此句
             
         # 接下来将comment_feature_list转换为topic_feature
         topic_feature = genereate_topic_feature(comment_feature_list, thread_pubdate, gaptime)
         comment_count_feature = genereate_topic_feature(comment_count_list, thread_pubdate, gaptime)
         # transform with delta features
-        topic_feature = transform_count_feature(topic_feature, factor_index_list = [])
+        topic_feature = transform_count_feature(topic_feature, factor_index_list = [0, 1])
         # 获得topic的category
         #cat = get_topic_category(thread_pubdate, comment_feature_list, percentage_threshold)
-        cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold)
-        #cat = get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold)
+        #cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold)
+        cat = get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold)
         
         category_count_list[cat] += 1
         # first feature vector，记录其他信息
@@ -588,7 +588,7 @@ def main(group_id):
     percentage_threshold = 0.7
     alpha = 1/percentage_threshold
     
-    """
+    #"""
     print 'Generating training and test dataset...'
     dataset, comment_count_dataset, Bao_dataset, category_count_list = prepare_dataset(group_id, \
         topic_list, gaptime, pop_level, prediction_date, target_date, alpha, percentage_threshold)
@@ -609,7 +609,7 @@ def main(group_id):
     
     # 注意：每次使用的数据集是不同的
     total = len(dataset)
-    train_cnt = total * 4 / 5
+    train_cnt = total * 9 / 10
     train_set = dataset[:train_cnt]
     test_set = dataset[train_cnt:]
     
@@ -620,16 +620,13 @@ def main(group_id):
     #save_filtered_topics(group_id, dataset)
     #raw_input()
     
-    #import ipdb
-    #ipdb.set_trace()
-    
     from MDT_method import prepare_MDT_dataset
     prepare_MDT_dataset(train_set, 'MDT_train.pickle')
     prepare_MDT_dataset(test_set, 'MDT_test.pickle')
     #return
         
     print 'The proposed model:'
-    k = 5
+    k = 7
     num_level = 2
     num_factor = len(train_set[0][1][1])
     
@@ -646,12 +643,12 @@ def main(group_id):
     
     # 保存prior-score，train dataset，test-dataset
     save_intermediate_results(train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list)
-    """
+    #"""
     
     print 'Loading train_set, test_set, comment_count_dataset, ... and prior_score...'
     train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list = load_intermediate_results()
     train_cnt = len(train_set)
-    k=3; num_level=2; num_factor = len(train_set[0][1][1])
+    k=7; num_level=2; num_factor = len(train_set[0][1][1])
     #factor_name_list = ['current_comment_count', 'num_authors', 'tree_density', 'reply_density'] # 需要考察的factor变量
     #factor_propagation_plot(group_id, train_set+test_set, num_feature, category_count_list, range(4), factor_name_list)
     #return 

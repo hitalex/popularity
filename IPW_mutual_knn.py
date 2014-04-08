@@ -19,7 +19,7 @@ def factor_knn(findex, topic_popularity, dataset, num_neigh):
     factor_knn_graph = dict()
     total = len(dataset)
     for topic_id, ins, level in dataset:
-        print 'Finding knn for topic: ', topic_id
+        #print 'Finding knn for topic: ', topic_id
         distance_comment_list = [0] * total
         index = 0
         for topic_id_other, ins_other, level_other in dataset:
@@ -59,14 +59,14 @@ def create_mutual_knn_graph(dataset, num_neigh, num_factor, topic_popularity):
     """
     factor_knn_graph_list = [] # for each dynamic factor
     for findex in range(num_factor):
-        print 'Caculating factor knn for factor: ', findex
+        #print 'Caculating factor knn for factor: ', findex
         factor_knn_graph = factor_knn(findex, topic_popularity, dataset, num_neigh)
         factor_knn_graph_list.append(factor_knn_graph)
         
     # create mutual knn graph
     mutual_knn_graph_list = []
     for findex in range(num_factor):
-        print 'Caculating factor knn for factor: ', findex
+        #print 'Caculating factor knn for factor: ', findex
         mutual_knn_graph = factor_knn_graph_list[findex]
         for topic_id in mutual_knn_graph:
             # 检查topic_id的每一个knn邻居
@@ -89,14 +89,24 @@ def caculate_instance_prior_confidence_score(train_set, test_set, num_neigh, num
     dataset.extend(test_set)
     
     topic_popularity = dict()    # topic_id ==> (level, comment_count)
-    for topic_id, ins, level in dataset:
+    for topic_id, ins, level in train_set:
         target_comment_count = ins[0][0]
         prediction_comment_count = ins[0][4]
         # ratio的值不小于1
         ratio = target_comment_count * 1.0 / prediction_comment_count
-        topic_popularity[topic_id] = (level, target_comment_count, prediction_comment_count, ratio)
+        # 最后一个值表示该topic是否是train topic
+        topic_popularity[topic_id] = (level, target_comment_count, prediction_comment_count, ratio, ins, True)
+        
+    # 对于测试样本, None值表示未知
+    for topic_id, ins, level in test_set:
+        target_comment_count = ins[0][0]
+        prediction_comment_count = ins[0][4]
+        # ratio的值不小于1
+        ratio = target_comment_count * 1.0 / prediction_comment_count
+        topic_popularity[topic_id] = (level, target_comment_count, prediction_comment_count, ratio, ins, False)
     
     print 'Creating mutual knn graphs...'
+    # Note: 一些帖子可能包含比num_neigh少的mutual knn neighbour
     mutual_knn_graph_list = create_mutual_knn_graph(dataset, num_neigh, num_factor, topic_popularity)
     #import ipdb; ipdb.set_trace()
     
@@ -163,23 +173,29 @@ def caculate_instance_prior_confidence_score(train_set, test_set, num_neigh, num
     print 'Training acc of single factors:', factor_correct_count / total
     return topic_popularity, prior_score, mutual_knn_graph_list
     
-def factor_score_knn(findex, mutual_knn_graph, topic_id, topic_popularity, num_level, prior_score = -1, gamma = 1):
+def factor_score_knn(findex, mutual_knn_graph, target_topic_id, topic_popularity, num_level, prior_score = -1, gamma = 1):
     """ 计算每个topic的confidence score和level score
     """
     # 标记是否考虑先验信息
     with_prior_flag = isinstance(prior_score, dict)
     
-    num_neighbour = len(mutual_knn_graph[topic_id])
-    neighbour_topic_id = list(mutual_knn_graph[topic_id])
+    num_mutual_neighbour = len(mutual_knn_graph[target_topic_id])
+    neighbour_topic_id = list(mutual_knn_graph[target_topic_id])
     
     level_confidence_score = np.zeros((num_level,), float)
-    # TODO： 这里的weight的值很可能覆盖prior
-    Z = 0
     level_prior_score = np.array([0] * num_level, float)
+    
+    if num_mutual_neighbour == 0:
+        print 'Topic %s in factor %d does not have any mutual knn neighbours.' % (target_topic_id, findex)
+        return level_confidence_score, level_prior_score
+        
     # normalize the distance
-    dis_list = [0] * num_neighbour
-    for i in range(num_neighbour):
-        dis_list[i] = 0 # Note: 暂不考虑样本距离带来的影响
+    dis_list = [0] * num_mutual_neighbour
+    for i in range(num_mutual_neighbour):
+        topic_id = neighbour_topic_id[i]
+        ins = topic_popularity[target_topic_id][4]
+        ins_other = topic_popularity[topic_id][4]
+        dis_list[i] = get_instance_distance(ins, ins_other, findex)
     
     # use the min-max normalizer
     #dis_list = my_min_max_scaler(dis_list)
@@ -187,12 +203,17 @@ def factor_score_knn(findex, mutual_knn_graph, topic_id, topic_popularity, num_l
     #import ipdb; ipdb.set_trace()
     Z = [0] * 2
     gamma = 1
-    for i in range(num_neighbour):
+    for i in range(num_mutual_neighbour):
         topic_id = neighbour_topic_id[i]
         #dis = knn_list[i][1]
+        # 如果topic_id不在训练集中则不考虑
+        if not topic_popularity[topic_id][-1]:
+            continue
+            
         level = topic_popularity[topic_id][0]
-        dis = dis_list[i] # 使用归一化的距离
+        dis = dis_list[i]
         
+        # TODO： 这里的weight的值很可能覆盖prior
         try:
             weight = math.exp(-gamma * dis)
         except OverflowError:
@@ -201,10 +222,6 @@ def factor_score_knn(findex, mutual_knn_graph, topic_id, topic_popularity, num_l
         
         Z[level] += weight
         if with_prior_flag: # 如果已经传递了先验信息
-            # 可能该topic_id为测试样本，所以不会出现在prior_score中
-            if not topic_id in prior_score:
-                continue
-                
             #import ipdb; ipdb.set_trace()
             level_confidence_score[level] += weight
             # 计算每个instance在这个factor下的level prior score
@@ -217,7 +234,7 @@ def factor_score_knn(findex, mutual_knn_graph, topic_id, topic_popularity, num_l
     if sum(Z) > 0:
         level_confidence_score /= sum(Z)
     else:
-        print 'Warning: %s dose not have any mutual knn neighbours.' % (topic_id)
+        print 'Warning: Topic(%s) in factor(%d) dose not have any mutual knn neighbours.' % (topic_id, findex)
         level_confidence_score[:] = 1/num_level
         
     # 在不同factor下的level confidence下加入level_prior_score信息

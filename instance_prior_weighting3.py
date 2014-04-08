@@ -188,6 +188,7 @@ def get_knn_level_list_old(distance_comment_list, k, level_count):
     for i in range(1, total):
         dis = distance_comment_list[i][1]
         level = distance_comment_list[i][4]
+        
         level_count_list[level] += 1
         if knn_dis[current_k_index] == dis:
             continue
