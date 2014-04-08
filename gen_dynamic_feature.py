@@ -26,6 +26,9 @@ dynamic_factor_dict = {'mean_degree':4, 'transitivity':5, 'avg_local_transitivit
     
 dynamic_factor_list = ['mean_degree', 'transitivity', 'avg_local_transitivity', 'assortativity', \
     'num_componnet', 'reply_density', 'tree_density', 'diffusion_depth', 'weighted_depth_sum']
+    
+# 评论数量的最大值
+MAX_COMMENT = 1000
 
 def main(group_id):
     base_path = '/home/kqc/dataset/douban-group/'
@@ -196,13 +199,15 @@ def main(group_id):
             #feature_dict['author_reply_max_cohesions'] = author_reply_max_cohesions
             
             # dynamic factor from WWW'13, Bao 
-            tree_density = comment_tree.density(loops=False)
+            tree_density            = comment_tree.density(loops=False)
+            average_path_length     = comment_tree.average_path_length(directed=False) # do not consider directed graphs
             #diffusion_depth = comment_tree.diameter(directed=True) # diffusion depth for a tree, i.e the depth of a tree
             diffusion_depth = max_depth
             # comment tree related factors
             feature_dict['tree_density']            = tree_density
             feature_dict['diffusion_depth']         = diffusion_depth
             feature_dict['avg_weighted_depth_sum']  = avg_weighted_depth_sum
+            feature_dict['avg_path_length']         = average_path_length   # Wiener index, the average distance between all paris of nodes in a cascade
                         
             # the comment-author two model network properties
             ca_mean_degree              = sum(comment_author_bigraph.degree()) * 1.0 / comment_author_bigraph.vcount()
@@ -222,13 +227,15 @@ def main(group_id):
             feature_dict['ca_reply_density']           = ca_reply_density
             #feature_dict['ca_max_cohesions']          = ca_max_cohesions
             
-            
             # write feature dict to file
             tf.write(str(feature_dict) + '\n')
+            # do not consider threads who has more than 1000 comments
+            if current_comment_count >= MAX_COMMENT:
+                break
 
         # print dynamic feature
-        plot(comment_tree)
-        plot(author_reply)
+        #plot(comment_tree)
+        #plot(author_reply)
         
         #ipdb.set_trace()
         
