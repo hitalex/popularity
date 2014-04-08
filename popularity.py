@@ -20,7 +20,8 @@ from score_ranking import score_ranking_knn, get_instance_distance
 #from score_ranking_vote import score_ranking_knn, get_instance_distance, caculate_class_prior_confidence_score
 #from instance_prior_weighting import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
 #from instance_prior_weighting2 import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
-from instance_prior_weighting3 import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
+#from instance_prior_weighting3 import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
+from IPW_mutual_knn import weighted_vote_instance_prior, caculate_instance_prior_confidence_score
 
 from effective_factor_method import effective_factor_knn, find_effective_factor
 from baseline_methods import SH_model, ML_model, MLR_model, knn_method, ARIMA_model, Bao_method
@@ -35,7 +36,7 @@ VIRAL_MIN_COMMENT = 50
 # 抓取内容的时间。如果target_date在此之后，则同样不进行预测
 DEADLINE = datetime(2013, 11, 15)
 # 在开始预测时，最少需要拥有的comment数量
-MIN_COMMENT_PREDICTION_DATE = 10
+MIN_COMMENT_PREDICTION_DATE = 20
 
 def get_level_index(num_comment, pop_level):
     """ Get the populairty leve according to the number of comments
@@ -101,7 +102,7 @@ def get_topic_category(thread_pubdate, comment_feature_list, threshold):
 def get_comment_percentage_category(target_comment, prediction_comment_count, percentage_threshold = 0.6):
     """ 分类标准：某个帖子在prediction_date_point时的comment数是否已经占所有comment总数的percentage_threshold
     """
-    if target_comment > VIRAL_MIN_COMMENT and prediction_comment_count * 1.0 / target_comment <= percentage_threshold:
+    if prediction_comment_count * 1.0 / target_comment <= percentage_threshold:
         cat = 1
     else:
         cat = 0
@@ -176,6 +177,7 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         path = 'data-dynamic/' + group_id + '/' + topic_id + '.txt'
         if not os.path.exists(path):
             continue
+            
         f = open(path, 'r')
         # read the first line
         line = f.readline().strip()
@@ -221,6 +223,7 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
             diffusion_depth         = feature_dict['diffusion_depth']
             avg_weighted_depth_sum  = feature_dict['avg_weighted_depth_sum']
             tree_link_density       = feature_dict['tree_density']
+            avg_path_length         = feature_dict['avg_path_length']
             #author_reply_max_cohesions = feature_dict['author_reply_max_cohesions']
             
             # comment_author two-mode network
@@ -231,10 +234,10 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
             #ca_max_cohesions        = feature_dict['ca_max_cohesions']
             
             delta_comment_count = 0 # 相较于上个interval增加的comment
-            # features: [comment count, mean degree]
-            #feature = [current_comment_count, tree_link_density, mean_degree]
+            
             # 当只取current_comment_count作为feature时，相当于简单knn算法
-            feature = [current_comment_count, num_authors, diffusion_depth, reply_density, mean_degree]
+            # Note: 根据feature的选择，需要决定transform_count_feature函数中参数的取值
+            feature = [current_comment_count, num_authors, diffusion_depth, avg_path_length, reply_density, mean_degree]
             
             comment_feature_list.append((pubdate, feature))
             # comment_count_list只记录了当前的评论数信息，用于baseline方法计算
@@ -268,7 +271,7 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         topic_feature = genereate_topic_feature(comment_feature_list, thread_pubdate, gaptime)
         comment_count_feature = genereate_topic_feature(comment_count_list, thread_pubdate, gaptime)
         # transform with delta features
-        topic_feature = transform_count_feature(topic_feature, factor_index_list = [0,1])
+        topic_feature = transform_count_feature(topic_feature, factor_index_list = [])
         # 获得topic的category
         #cat = get_topic_category(thread_pubdate, comment_feature_list, percentage_threshold)
         cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold)
@@ -358,7 +361,7 @@ def find_nearest_neighbor_level(test_ins, train_set, k):
         
     return nearest_neighbor_level
     
-def classify(train_set, test_set, k, num_level, prior_score):
+def classify(train_set, test_set, k, num_factor, num_level, prior_score, topic_popularity, mutual_knn_graph_list = None):
     """ 
     k: number of nearest neighbors
     
@@ -383,8 +386,9 @@ def classify(train_set, test_set, k, num_level, prior_score):
             ipdb.set_trace()
         # find k nearest neighbors' levels    
         #nearest_neighbor_level = find_nearest_neighbor_level(test_ins, train_set, k)
-        nearest_neighbor_level, knn_topic_id, weighted_num_comment = score_ranking_knn(test_ins, train_set, k, 1); factor_prediction=0
-        #nearest_neighbor_level, knn_topic_id, weighted_num_comment, factor_prediction = weighted_vote_instance_prior(test_ins, train_set, k, prior_score)
+        #nearest_neighbor_level, knn_topic_id, weighted_num_comment = score_ranking_knn(test_ins, train_set, k, 1); factor_prediction=0
+        #nearest_neighbor_level, knn_topic_id, weighted_num_comment, factor_prediction = weighted_vote_instance_prior(test_ins, train_set, k, prior_score) # for IPW3.py
+        nearest_neighbor_level, knn_topic_id, weighted_num_comment, factor_prediction = weighted_vote_instance_prior(test_topic_id, mutual_knn_graph_list, num_factor, topic_popularity, prior_score) # for IPW_mutual_knn
         
         if nearest_neighbor_level == []:
             give_up_list.append(test_topic_id)
@@ -531,30 +535,31 @@ def single_factor_prediction(y_true, factor_prediction):
         
     print 'Simple vote acc:', vote_correct*1.0/test_count
     
-def save_intermediate_results(train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score):
+def save_intermediate_results(train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list):
     """
     """
     import pickle
     print 'Saving train_set, test_set, prior_score...'
-    f = open('popularity.pickle', 'w')
-    pickle.dump([train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score], f)
+    f = open('pickle/popularity.pickle', 'w')
+    pickle.dump([train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list], f)
     f.close()
     
 def load_intermediate_results():
     import pickle
     print 'Loading train_set, test_set, prior_score...'
-    f = open('popularity.pickle', 'r')
-    train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score = pickle.load(f)
+    f = open('pickle/popularity.pickle', 'r')
+    train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list = pickle.load(f)
     f.close()
     
-    return train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score
+    return train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list
     
 def main(group_id):
-
     topiclist_path = 'data-dynamic/TopicList-' + group_id + '-filtered.txt'
     print 'Reading topic list from file:', topiclist_path
     topic_list = load_id_list(topiclist_path)
     print 'Number of total topics loaded: ', len(topic_list)
+    # for test
+    #topic_list = topic_list[:50] # rather small scale test
 
     # set the pre-computed popularity level
     # 未来的最大评论数可能超过pop_level的最大值
@@ -608,9 +613,6 @@ def main(group_id):
     train_set = dataset[:train_cnt]
     test_set = dataset[train_cnt:]
     
-    #train_set = train_set[:50]
-    #tese_set = test_set[:10]
-    
     print 'Training: %d, Test: %d' % (train_cnt, total-train_cnt)
     print 'Category 0: %d, Category 1: %d ' % (category_count_list[0] , category_count_list[1])
     print 'Imbalance ratio: ', category_count_list[0] * 1.0 / category_count_list[1]
@@ -627,7 +629,7 @@ def main(group_id):
     #return
         
     print 'The proposed model:'
-    k = 3
+    k = 5
     num_level = 2
     num_factor = len(train_set[0][1][1])
     
@@ -638,20 +640,25 @@ def main(group_id):
     
     print 'Caculating instance prior score...'
     prior_score = -1
-    prior_score = caculate_instance_prior_confidence_score(train_set, k, num_level = 2)
+    mutual_knn_graph_list = None
+    #prior_score = caculate_instance_prior_confidence_score(train_set, k, num_level = 2) # for instance_prior_weighting3.py
+    topic_popularity, prior_score, mutual_knn_graph_list = caculate_instance_prior_confidence_score(train_set, test_set, k, num_factor, num_level = 2) # for IPW_mutual_knn.py
     
     # 保存prior-score，train dataset，test-dataset
-    save_intermediate_results(train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score)
+    save_intermediate_results(train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list)
     """
-    k=3; num_level=2
-    train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, prior_score = load_intermediate_results()
+    
+    print 'Loading train_set, test_set, comment_count_dataset, ... and prior_score...'
+    train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list = load_intermediate_results()
     train_cnt = len(train_set)
+    k=3; num_level=2; num_factor = len(train_set[0][1][1])
     #factor_name_list = ['current_comment_count', 'num_authors', 'tree_density', 'reply_density'] # 需要考察的factor变量
     #factor_propagation_plot(group_id, train_set+test_set, num_feature, category_count_list, range(4), factor_name_list)
     #return 
     
     print 'Classify test instances...'
-    y_true, y_pred, comment_true, comment_pred, give_up_list, prediction_list, factor_prediction = classify(train_set, test_set, k, num_level, prior_score)
+    y_true, y_pred, comment_true, comment_pred, give_up_list, prediction_list, factor_prediction = \
+        classify(train_set, test_set, k, num_factor, num_level, prior_score, topic_popularity, mutual_knn_graph_list)
     # evaluate results
     print 'Number of give-ups: ', len(give_up_list)
     classification_evaluation(y_true, y_pred)
