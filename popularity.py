@@ -472,10 +472,14 @@ def classification_evaluation(y_true, y_pred):
         
         if y_true[i] == y_pred[i]:
             correct += 1
-    print "After random choice: Total: %d, Correct: %d, Acc: %f" % (total, correct, correct*1.0/total)
+            
+    acc = correct*1.0/total
+    print "After random choice: Total: %d, Correct: %d, Acc: %f" % (total, correct, acc)
     
     print 'Detailed classification report:'
     print sklearn.metrics.classification_report(y_true, y_pred)
+    
+    return acc
     
 def save_filtered_topics(group_id, dataset):
     """
@@ -530,10 +534,14 @@ def single_factor_prediction(y_true, factor_prediction):
         if vote_pred == y_true[i]:
             vote_correct += 1
     
+    factor_acc = [0] * num_factor
     for i in range(num_factor):
-        print 'Factor %d acc: %f' % (i, correct[i]*1.0/test_count)
+        factor_acc[i] = correct[i]*1.0/test_count
+        print 'Factor %d acc: %f' % (i, factor_acc[i])
         
     print 'Simple vote acc:', vote_correct*1.0/test_count
+    
+    return factor_acc
     
 def save_intermediate_results(train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list):
     """
@@ -553,13 +561,7 @@ def load_intermediate_results():
     
     return train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list
     
-def main(group_id):
-    topiclist_path = 'data-dynamic/TopicList-' + group_id + '-filtered.txt'
-    print 'Reading topic list from file:', topiclist_path
-    topic_list = load_id_list(topiclist_path)
-    print 'Number of total topics loaded: ', len(topic_list)
-    # for test
-    #topic_list = topic_list[:50] # rather small scale test
+def main(group_id, topic_list):
 
     # set the pre-computed popularity level
     # 未来的最大评论数可能超过pop_level的最大值
@@ -578,14 +580,11 @@ def main(group_id):
     response_time = timedelta(hours=25)
     target_date = prediction_date + response_time
     
-    print 'Prediction date:', prediction_date.total_seconds() / 60*60
-    print 'Response time:', response_time.total_seconds() / 60 * 60
-    
     # 计算每个topic在prediction_date前会有多少个interval
     num_feature = int(prediction_date.total_seconds() / gaptime.total_seconds())
     print 'Number of features: ', num_feature
     
-    percentage_threshold = 0.7
+    percentage_threshold = 0.8
     alpha = 1/percentage_threshold
     
     #"""
@@ -609,7 +608,7 @@ def main(group_id):
     
     # 注意：每次使用的数据集是不同的
     total = len(dataset)
-    train_cnt = total * 9 / 10
+    train_cnt = total * 4 / 5
     train_set = dataset[:train_cnt]
     test_set = dataset[train_cnt:]
     
@@ -621,15 +620,15 @@ def main(group_id):
     #raw_input()
     
     from MDT_method import prepare_MDT_dataset
-    prepare_MDT_dataset(train_set, 'MDT_train.pickle')
-    prepare_MDT_dataset(test_set, 'MDT_test.pickle')
-    #return
-        
-    print 'The proposed model:'
-    k = 7
+    #prepare_MDT_dataset(train_set, 'MDT_train.pickle')
+    #prepare_MDT_dataset(test_set, 'MDT_test.pickle')
+    #return    
+    
+    k = 3
     num_level = 2
     num_factor = len(train_set[0][1][1])
     
+    print 'The proposed model:'
     #print 'Caculating class prior score...'
     #prior_score = np.ones((num_factor, num_level)) # 初始化
     #prior_score = caculate_class_prior_confidence_score(train_set, k, num_level = 2)
@@ -648,17 +647,25 @@ def main(group_id):
     print 'Loading train_set, test_set, comment_count_dataset, ... and prior_score...'
     train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list = load_intermediate_results()
     train_cnt = len(train_set)
-    k=7; num_level=2; num_factor = len(train_set[0][1][1])
+    k=3; num_level=2; num_factor = len(train_set[0][1][1])
     #factor_name_list = ['current_comment_count', 'num_authors', 'tree_density', 'reply_density'] # 需要考察的factor变量
     #factor_propagation_plot(group_id, train_set+test_set, num_feature, category_count_list, range(4), factor_name_list)
     #return 
+    
+    print 'Parameter set:'
+    print 'Gap time: ', gaptime
+    print 'Prediction date:', prediction_date.total_seconds() / 60*60
+    print 'Response time:', response_time.total_seconds() / 60 * 60
+    print 'percentage_threshold: ', percentage_threshold
+    print 'k = ', k
+
     
     print 'Classify test instances...'
     y_true, y_pred, comment_true, comment_pred, give_up_list, prediction_list, factor_prediction = \
         classify(train_set, test_set, k, num_factor, num_level, prior_score, topic_popularity, mutual_knn_graph_list)
     # evaluate results
     print 'Number of give-ups: ', len(give_up_list)
-    classification_evaluation(y_true, y_pred)
+    IPW_acc = classification_evaluation(y_true, y_pred)
     level_MSE_evaluation(y_true, y_pred)
     #save_predictions(prediction_list, y_pred, factor_name = 'fourfactor')
     #save_predictions(prediction_list, y_true, factor_name = 'all')
@@ -668,7 +675,9 @@ def main(group_id):
     #print 'The class prior:', prior_score
     
     print 'Single factor and simple vote prediction result:'
-    single_factor_prediction(y_true, factor_prediction)
+    single_factor_acc = single_factor_prediction(y_true, factor_prediction)
+    
+    return IPW_acc, single_factor_acc # 返回正确率
      
     from svm_model import svm_model
     print 'Building a svm model...'
@@ -723,5 +732,25 @@ if __name__ == '__main__':
     import sys
     group_id = sys.argv[1]
     
-    main(group_id)
+    topiclist_path = 'data-dynamic/TopicList-' + group_id + '-filtered.txt'
+    print 'Reading topic list from file:', topiclist_path
+    topic_list = load_id_list(topiclist_path)
+    print 'Number of total topics loaded: ', len(topic_list)
+    # for test
+    #topic_list = topic_list[:50] # rather small scale test
+    
+    num_runs = 3 # 运行次数
+    avg_IPW_acc = 0.0
+    avg_single_factor_acc = np.array([0]*6, float)
+    for i in range(num_runs):
+        shuffle(topic_list)
+        IPW_acc, single_factor_acc = main(group_id, topic_list)
+        
+        avg_IPW_acc += IPW_acc
+        avg_single_factor_acc += np.array(single_factor_acc, float)
 
+    avg_IPW_acc /= num_runs
+    avg_single_factor_acc /= num_runs
+    
+    print 'avg_IPW_acc: ', avg_IPW_acc
+    print 'avg_single_factor_acc: ', avg_single_factor_acc
