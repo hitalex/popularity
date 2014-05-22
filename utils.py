@@ -22,7 +22,7 @@ def my_min_max_scaler(data, a=0, b=1.0):
         return [0] * count
         
     for i in range(count):
-        data[i] = (b-a) * (data[i] - min_value) * 1.0 / (max_value - min_value)
+        data[i] = (b-a) * (data[i] - min_value) * 1.0 / (max_value - min_value) + a
         
     return data
             

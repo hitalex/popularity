@@ -32,11 +32,11 @@ MIN_COMMENT = 5
 # 评论数量的最大值
 MAX_COMMENT = 1000
 # 可以看作是viral的最少评论数
-VIRAL_MIN_COMMENT = 50
+VIRAL_MIN_COMMENT = 10
 # 抓取内容的时间。如果target_date在此之后，则同样不进行预测
 DEADLINE = datetime(2013, 11, 15)
 # 在开始预测时，最少需要拥有的comment数量
-MIN_COMMENT_PREDICTION_DATE = 20
+MIN_COMMENT_PREDICTION_DATE = 10
 
 def get_level_index(num_comment, pop_level):
     """ Get the populairty leve according to the number of comments
@@ -265,7 +265,7 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         # 如果最后一个评论的时间还不到target date，则不考虑这些帖子
         if not target_date_flag:
             target_comment_count = current_comment_count
-            #continue  #当分类标准为comment_percentage的total comment count时，应该注释此句
+            continue  #当分类标准为comment_percentage的total comment count时，应该注释此句
             
         # 接下来将comment_feature_list转换为topic_feature
         topic_feature = genereate_topic_feature(comment_feature_list, thread_pubdate, gaptime)
@@ -274,8 +274,8 @@ def prepare_dataset(group_id, topic_list, gaptime, pop_level, prediction_date, t
         topic_feature = transform_count_feature(topic_feature, factor_index_list = [0, 1])
         # 获得topic的category
         #cat = get_topic_category(thread_pubdate, comment_feature_list, percentage_threshold)
-        #cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold)
-        cat = get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold)
+        cat = get_comment_percentage_category(target_comment_count, prediction_comment_count, percentage_threshold)
+        #cat = get_comment_percentage_category(total_comment, prediction_comment_count, percentage_threshold)
         
         category_count_list[cat] += 1
         # first feature vector，记录其他信息
