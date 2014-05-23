@@ -34,7 +34,9 @@ MAX_COMMENT = 1000
 # 可以看作是viral的最少评论数
 VIRAL_MIN_COMMENT = 10
 # 抓取内容的时间。如果target_date在此之后，则同样不进行预测
-DEADLINE = datetime(2013, 11, 15)
+#DEADLINE = datetime(2013, 11, 15) # for douban dataset
+DEADLINE = datetime(2014, 5, 20) # for Tianya dataset
+
 # 在开始预测时，最少需要拥有的comment数量
 MIN_COMMENT_PREDICTION_DATE = 10
 
@@ -575,16 +577,16 @@ def main(group_id, topic_list):
     # target_date 的含义为：预测在 target_date 处的评论数量
     # 以上两个参数可以调节
     # 设置采样的间隔
-    gaptime = timedelta(hours=5)
-    prediction_date = timedelta(hours=10*5)
-    response_time = timedelta(hours=25)
+    gaptime = timedelta(hours=3)
+    prediction_date = timedelta(hours=10*3)
+    response_time = timedelta(hours=24)
     target_date = prediction_date + response_time
     
     # 计算每个topic在prediction_date前会有多少个interval
     num_feature = int(prediction_date.total_seconds() / gaptime.total_seconds())
     print 'Number of features: ', num_feature
     
-    percentage_threshold = 0.8
+    percentage_threshold = 0.7
     alpha = 1/percentage_threshold
     
     #"""
@@ -732,14 +734,16 @@ if __name__ == '__main__':
     import sys
     group_id = sys.argv[1]
     
-    topiclist_path = 'data-dynamic/TopicList-' + group_id + '-filtered.txt'
+    #topiclist_path = 'data-dynamic/TopicList-' + group_id + '-filtered.txt'
+    topiclist_path = 'data-dynamic/' + group_id + '-post-list.txt' # for Tianya dataset
+    
     print 'Reading topic list from file:', topiclist_path
     topic_list = load_id_list(topiclist_path)
     print 'Number of total topics loaded: ', len(topic_list)
     # for test
     #topic_list = topic_list[:50] # rather small scale test
     
-    num_runs = 3 # 运行次数
+    num_runs = 1 # 运行次数
     avg_IPW_acc = 0.0
     avg_single_factor_acc = np.array([0]*6, float)
     for i in range(num_runs):

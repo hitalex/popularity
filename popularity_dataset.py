@@ -30,7 +30,8 @@ MAX_COMMENT = 1000
 # 目标时刻的评论数用threshold来约束
 VIRAL_MIN_COMMENT = 50
 # 抓取内容的时间。如果target_date在此之后，则同样不进行预测
-DEADLINE = datetime(2013, 11, 15)
+#DEADLINE = datetime(2013, 11, 15)
+DEADLINE = datetime(2014, 5, 20)
 # 在开始预测时，最少需要拥有的comment数量
 MIN_COMMENT_PREDICTION_DATE = 10
 
@@ -334,7 +335,9 @@ def save_filtered_topics(group_id, dataset):
     
 def main(group_id):
 
-    topiclist_path = 'data-dynamic/TopicList-' + group_id + '-shuffled.txt'
+    #topiclist_path = 'data-dynamic/TopicList-' + group_id + 'shuffled-.txt' # for douban dataset
+    topiclist_path = 'data-dynamic/' + group_id + '-post-list.txt' # for Tianya dataset
+    
     topic_list = load_id_list(topiclist_path)
     print 'Number of total topics loaded: ', len(topic_list)
     pop_level = [25, 50, float('inf')]  
@@ -343,9 +346,9 @@ def main(group_id):
     # target_date 的含义为：预测在 target_date 处的评论数量
     # 以上两个参数可以调节
     # 设置采样的间隔
-    gaptime = timedelta(hours=5)
-    prediction_date = timedelta(hours=15*2)
-    response_time = timedelta(hours=50)
+    gaptime = timedelta(hours=3)
+    prediction_date = timedelta(hours=10*3)
+    response_time = timedelta(hours=24)
     target_date = prediction_date + response_time
     
     # 计算每个topic在prediction_date前会有多少个interval
