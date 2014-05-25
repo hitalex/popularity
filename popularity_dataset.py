@@ -23,7 +23,7 @@ from baseline_methods import SH_model, ML_model, MLR_model, knn_method, ARIMA_mo
 from plot.factor_relevance_plot import *
 
 # 评论数量的阈值，如果评论数量小于该值，则不考虑
-MIN_COMMENT = 5
+MIN_COMMENT = 10
 # 评论数量的最大值
 MAX_COMMENT = 1000
 # 可以看作是viral的最少评论数, 目前不打算在此进行约束
@@ -33,7 +33,7 @@ VIRAL_MIN_COMMENT = 50
 #DEADLINE = datetime(2013, 11, 15)
 DEADLINE = datetime(2014, 5, 20)
 # 在开始预测时，最少需要拥有的comment数量
-MIN_COMMENT_PREDICTION_DATE = 10
+MIN_COMMENT_PREDICTION_DATE = 5
 
 def get_level_index(num_comment, pop_level):
     """ Get the populairty leve according to the number of comments

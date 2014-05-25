@@ -38,7 +38,7 @@ VIRAL_MIN_COMMENT = 10
 DEADLINE = datetime(2014, 5, 20) # for Tianya dataset
 
 # 在开始预测时，最少需要拥有的comment数量
-MIN_COMMENT_PREDICTION_DATE = 10
+MIN_COMMENT_PREDICTION_DATE = 5
 
 def get_level_index(num_comment, pop_level):
     """ Get the populairty leve according to the number of comments
@@ -563,7 +563,11 @@ def load_intermediate_results():
     
     return train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list
     
-def main(group_id, topic_list):
+def main(group_id, topic_list, threshold_p, prediction_date_tr):
+    
+    # 设置两个自由参数值，由外部传入
+    percentage_threshold = threshold_p
+    prediction_date = timedelta(hours=prediction_date_tr)
 
     # set the pre-computed popularity level
     # 未来的最大评论数可能超过pop_level的最大值
@@ -578,7 +582,7 @@ def main(group_id, topic_list):
     # 以上两个参数可以调节
     # 设置采样的间隔
     gaptime = timedelta(hours=3)
-    prediction_date = timedelta(hours=10*3)
+    #prediction_date = timedelta(hours=10*3)
     response_time = timedelta(hours=24)
     target_date = prediction_date + response_time
     
@@ -626,7 +630,7 @@ def main(group_id, topic_list):
     #prepare_MDT_dataset(test_set, 'MDT_test.pickle')
     #return    
     
-    k = 3
+    k = 5
     num_level = 2
     num_factor = len(train_set[0][1][1])
     
@@ -741,20 +745,32 @@ if __name__ == '__main__':
     topic_list = load_id_list(topiclist_path)
     print 'Number of total topics loaded: ', len(topic_list)
     # for test
-    #topic_list = topic_list[:50] # rather small scale test
+    #topic_list = topic_list[:100] # rather small scale test
     
     num_runs = 1 # 运行次数
     avg_IPW_acc = 0.0
     avg_single_factor_acc = np.array([0]*6, float)
-    for i in range(num_runs):
-        shuffle(topic_list)
-        IPW_acc, single_factor_acc = main(group_id, topic_list)
-        
-        avg_IPW_acc += IPW_acc
-        avg_single_factor_acc += np.array(single_factor_acc, float)
-
-    avg_IPW_acc /= num_runs
-    avg_single_factor_acc /= num_runs
     
-    print 'avg_IPW_acc: ', avg_IPW_acc
-    print 'avg_single_factor_acc: ', avg_single_factor_acc
+    # two free parameters
+    #threshold_list = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+    threshold_list = [0.7]
+    #prediction_date_list = [30, 54, 78, 104, 128, 152]
+    prediction_date_list = [54]
+    
+    print 'Averaging the results:'
+    for threshold_p in threshold_list:
+        for prediction_date_tr in prediction_date_list:
+            for i in range(num_runs):
+                shuffle(topic_list)
+                IPW_acc, single_factor_acc = main(group_id, topic_list, threshold_p, prediction_date_tr)
+                
+                avg_IPW_acc += IPW_acc
+                avg_single_factor_acc += np.array(single_factor_acc, float)
+
+            avg_IPW_acc /= num_runs
+            avg_single_factor_acc /= num_runs
+            
+            print 'Threshold:', threshold_p
+            print 'Prediction date:', prediction_date_tr
+            print 'avg_IPW_acc: ', avg_IPW_acc
+            print 'avg_single_factor_acc: ', avg_single_factor_acc

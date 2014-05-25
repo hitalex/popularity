@@ -182,6 +182,7 @@ def load_id_list(file_path):
             id_list.append(line)
     f.close()
     
+    id_list = list(set(id_list))
     return id_list
     
 def smooth(a, hyper=2.5):
