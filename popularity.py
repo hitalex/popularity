@@ -752,10 +752,10 @@ if __name__ == '__main__':
     avg_single_factor_acc = np.array([0]*6, float)
     
     # two free parameters
-    #threshold_list = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
-    threshold_list = [0.7]
-    #prediction_date_list = [30, 54, 78, 104, 128, 152]
-    prediction_date_list = [54]
+    threshold_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    #threshold_list = [0.7]
+    #prediction_date_list = [24, 36, 48, 60, 72, 84, 96, 108, 120]
+    prediction_date_list = [36]
     
     print 'Averaging the results:'
     for threshold_p in threshold_list:

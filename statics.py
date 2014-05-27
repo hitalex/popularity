@@ -22,7 +22,8 @@ MAX_COMMENT = 1000
 # 目标时刻的评论数用threshold来约束
 VIRAL_MIN_COMMENT = 50
 # 抓取内容的时间。如果target_date在此之后，则同样不进行预测
-DEADLINE = datetime(2013, 11, 15)
+#DEADLINE = datetime(2013, 11, 15)
+DEADLINE = datetime(2014, 5, 20) # for tianya forum
 # 在开始预测时，最少需要拥有的comment数量
 MIN_COMMENT_PREDICTION_DATE = 10
 
@@ -120,17 +121,18 @@ def collect_comments_lifecycle(group_id, topic_list):
 
 def main(group_id):
     import pickle
-    topiclist_path = 'data-dynamic/TopicList-' + group_id + '-shuffled.txt'
+    #topiclist_path = 'data-dynamic/TopicList-' + group_id + '-shuffled.txt'
+    topiclist_path = 'data-dynamic/' + group_id + '-post-list.txt' # for Tianya dataset
     topic_list = load_id_list(topiclist_path)
     print 'Number of total topics loaded: ', len(topic_list)
     
-    """
+    # 存储中间结果
     num_comment_list, num_lifecycle_list = collect_comments_lifecycle(group_id, topic_list)    
     print 'Number of threads:', len(num_comment_list)
     f = open('pickle/comment-lifecycle-dist.pickle', 'w')
     pickle.dump([num_comment_list, num_lifecycle_list], f)
     f.close()
-    """
+    
     f = open('pickle/comment-lifecycle-dist.pickle', 'r')
     num_comment_list, num_lifecycle_list = pickle.load(f)
     f.close()
