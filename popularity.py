@@ -563,11 +563,12 @@ def load_intermediate_results():
     
     return train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list
     
-def main(group_id, topic_list, threshold_p, prediction_date_tr):
+def main(group_id, topic_list, threshold_p, prediction_date_tr, response_time_delta):
     
     # 设置两个自由参数值，由外部传入
     percentage_threshold = threshold_p
     prediction_date = timedelta(hours=prediction_date_tr)
+    response_time = timedelta(hours=response_time_delta)
 
     # set the pre-computed popularity level
     # 未来的最大评论数可能超过pop_level的最大值
@@ -583,14 +584,14 @@ def main(group_id, topic_list, threshold_p, prediction_date_tr):
     # 设置采样的间隔
     gaptime = timedelta(hours=3)
     #prediction_date = timedelta(hours=10*3)
-    response_time = timedelta(hours=24)
+    #response_time = timedelta(hours=24) # 已经作为参数传递
     target_date = prediction_date + response_time
     
     # 计算每个topic在prediction_date前会有多少个interval
     num_feature = int(prediction_date.total_seconds() / gaptime.total_seconds())
     print 'Number of features: ', num_feature
     
-    percentage_threshold = 0.7
+    #percentage_threshold = 0.7
     alpha = 1/percentage_threshold
     
     #"""
@@ -665,7 +666,8 @@ def main(group_id, topic_list, threshold_p, prediction_date_tr):
     print 'percentage_threshold: ', percentage_threshold
     print 'k = ', k
 
-    
+    # TODO：测试是否过拟合
+    test_set = train_set
     print 'Classify test instances...'
     y_true, y_pred, comment_true, comment_pred, give_up_list, prediction_list, factor_prediction = \
         classify(train_set, test_set, k, num_factor, num_level, prior_score, topic_popularity, mutual_knn_graph_list)
@@ -683,8 +685,6 @@ def main(group_id, topic_list, threshold_p, prediction_date_tr):
     print 'Single factor and simple vote prediction result:'
     single_factor_acc = single_factor_prediction(y_true, factor_prediction)
     
-    return IPW_acc, single_factor_acc # 返回正确率
-     
     from svm_model import svm_model
     print 'Building a svm model...'
     y_true, y_pred = svm_model(train_set, test_set)
@@ -734,12 +734,14 @@ def main(group_id, topic_list, threshold_p, prediction_date_tr):
     comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)
     classification_evaluation(y_true, y_pred)
     
+    return IPW_acc, single_factor_acc # 返回正确率
+    
 if __name__ == '__main__':
     import sys
     group_id = sys.argv[1]
     
-    #topiclist_path = 'data-dynamic/TopicList-' + group_id + '-filtered.txt'
-    topiclist_path = 'data-dynamic/' + group_id + '-post-list.txt' # for Tianya dataset
+    topiclist_path = 'data-dynamic/TopicList-' + group_id + '-filtered.txt' # for douban-group
+    #topiclist_path = 'data-dynamic/' + group_id + '-post-list.txt' # for Tianya dataset
     
     print 'Reading topic list from file:', topiclist_path
     topic_list = load_id_list(topiclist_path)
@@ -752,25 +754,29 @@ if __name__ == '__main__':
     avg_single_factor_acc = np.array([0]*6, float)
     
     # two free parameters
-    threshold_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-    #threshold_list = [0.7]
+    #threshold_list = [0.3, 0.4, 0.5, 0.6, 0.7]
+    threshold_list = [0.5]
     #prediction_date_list = [24, 36, 48, 60, 72, 84, 96, 108, 120]
-    prediction_date_list = [36]
+    #prediction_date_list = [48, 60, 72, 84, 96]
+    prediction_date_list = [48]
+    response_time_delta_list = [6, 12, 18, 24, 30, 36, 42, 48]
     
     print 'Averaging the results:'
     for threshold_p in threshold_list:
         for prediction_date_tr in prediction_date_list:
-            for i in range(num_runs):
-                shuffle(topic_list)
-                IPW_acc, single_factor_acc = main(group_id, topic_list, threshold_p, prediction_date_tr)
-                
-                avg_IPW_acc += IPW_acc
-                avg_single_factor_acc += np.array(single_factor_acc, float)
+            for response_time_delta in response_time_delta_list:
+                avg_IPW_acc = 0.0
+                for i in range(num_runs):
+                    shuffle(topic_list)
+                    IPW_acc, single_factor_acc = main(group_id, topic_list, threshold_p, prediction_date_tr, response_time_delta)
+                    
+                    avg_IPW_acc += IPW_acc
+                    avg_single_factor_acc += np.array(single_factor_acc, float)
 
-            avg_IPW_acc /= num_runs
-            avg_single_factor_acc /= num_runs
-            
-            print 'Threshold:', threshold_p
-            print 'Prediction date:', prediction_date_tr
-            print 'avg_IPW_acc: ', avg_IPW_acc
-            print 'avg_single_factor_acc: ', avg_single_factor_acc
+                avg_IPW_acc /= num_runs
+                avg_single_factor_acc /= num_runs
+                
+                print 'Threshold:', threshold_p
+                print 'Prediction date:', prediction_date_tr
+                print 'avg_IPW_acc: ', avg_IPW_acc
+                print 'avg_single_factor_acc: ', avg_single_factor_acc
