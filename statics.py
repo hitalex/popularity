@@ -27,6 +27,8 @@ DEADLINE = datetime(2014, 5, 20) # for tianya forum
 # 在开始预测时，最少需要拥有的comment数量
 MIN_COMMENT_PREDICTION_DATE = 10
 
+MAX_LIFECYCLE = 10000
+
 def plot_histogram(x, title):
     """ 根据lifespan的list画出帖子生命周期的分布直方图
     """
@@ -36,7 +38,7 @@ def plot_histogram(x, title):
     n, bins, patches = plt.hist(x, bins=range(xmin, xmax+1, 1), normed=0, facecolor='green', alpha=0.5)
     plt.show()
     
-def plot_loglog(data, title = u'', xlabel_text = u'', ylabel_text = u''):
+def plot_loglog(ax, data, title = u'', xlabel_text = u'', ylabel_text = u''):
     """ 根据数据分布，画出log-log图
     """
     from scipy.stats import itemfreq
@@ -54,13 +56,12 @@ def plot_loglog(data, title = u'', xlabel_text = u'', ylabel_text = u''):
     ax.grid(True)
     #ax.title(title)
     """
-    plt.loglog(x, y, basex=2, basey=2, ls='None', marker='x', color='b')
-    plt.grid(True)
-    plt.title(title, fontproperties=font)
-    plt.xlabel(xlabel_text, fontproperties=font)
-    plt.ylabel(ylabel_text, fontproperties=font)
+    ax.loglog(x, y, basex=2, basey=2, ls='None', marker='x', color='b')
+    ax.grid(True)
+    ax.set_title(title, fontproperties=font)
+    ax.set_xlabel(xlabel_text, fontproperties=font)
+    ax.set_ylabel(ylabel_text, fontproperties=font)
     
-    plt.show()
 
 def collect_comments_lifecycle(group_id, topic_list):
     """ 收集评论数和持续时间长度
@@ -109,8 +110,8 @@ def collect_comments_lifecycle(group_id, topic_list):
         delta_time = last_comment_date - thread_pubdate
         num_days = delta_time.total_seconds() * 1.0 / seconds_in_a_day # 计算天数
         
-        # 过滤出持续时间大于一年的帖子
-        if num_days > 365:
+        # 过滤出持续时间大于一定时间的帖子
+        if num_days > MAX_LIFECYCLE:
             print 'Filtered: %s, num_days: %f' % (topic_id, num_days)
             continue
         
@@ -126,14 +127,16 @@ def main(group_id):
     topic_list = load_id_list(topiclist_path)
     print 'Number of total topics loaded: ', len(topic_list)
     
+    """
     # 存储中间结果
     num_comment_list, num_lifecycle_list = collect_comments_lifecycle(group_id, topic_list)    
     print 'Number of threads:', len(num_comment_list)
-    f = open('pickle/comment-lifecycle-dist.pickle', 'w')
+    f = open('pickle/comment-lifecycle-dist-tianya.pickle', 'w')
     pickle.dump([num_comment_list, num_lifecycle_list], f)
     f.close()
+    """
     
-    f = open('pickle/comment-lifecycle-dist.pickle', 'r')
+    f = open('pickle/comment-lifecycle-dist-tianya.pickle', 'r')
     num_comment_list, num_lifecycle_list = pickle.load(f)
     f.close()
     
@@ -141,17 +144,23 @@ def main(group_id):
     #plot_histogram(num_comment_list, '')    
     #plot_histogram(num_lifecycle_list, '')
     
+    fig = plt.figure()
+    ax1 = plt.subplot(121) # 左边的图
+    ax2 = plt.subplot(122) # 右边的图
+    
     print 'Number of elements: ', len(num_comment_list)
-    plot_loglog(num_comment_list, u'', u'评论数', u'讨论帖数量')
-    #plot_loglog(num_comment_list, '', 'Number of comments', 'Number of threads')
+    #plot_loglog(num_comment_list, u'', u'评论数', u'讨论帖数量')
+    plot_loglog(ax1, num_comment_list, '', 'Number of comments', 'Number of threads')
     
     
     for i in range(len(num_lifecycle_list)):
         #num_lifecycle_list[i] = int(num_lifecycle_list[i] * 24)
         num_lifecycle_list[i] = int(num_lifecycle_list[i])
      
-    plot_loglog(num_lifecycle_list, u'', u'生命周期长度', u'讨论帖数量')
-    #plot_loglog(num_lifecycle_list, '', 'Lifecycle length', 'Number of threads')
+    #plot_loglog(num_lifecycle_list, u'', u'生命周期长度', u'讨论帖数量')
+    plot_loglog(ax2, num_lifecycle_list, '', 'Length of lifecycle(days)', 'Number of threads')
+    
+    plt.show()
 
 if __name__ == '__main__':
     import sys

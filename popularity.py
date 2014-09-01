@@ -563,7 +563,7 @@ def load_intermediate_results():
     
     return train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list
     
-def main(group_id, topic_list, threshold_p, prediction_date_tr, response_time_delta):
+def main(group_id, topic_list, threshold_p, prediction_date_tr, response_time_delta, gaptime_n, best_k):
     
     # 设置两个自由参数值，由外部传入
     percentage_threshold = threshold_p
@@ -582,7 +582,7 @@ def main(group_id, topic_list, threshold_p, prediction_date_tr, response_time_de
     # target_date 的含义为：预测在 target_date 处的评论数量
     # 以上两个参数可以调节
     # 设置采样的间隔
-    gaptime = timedelta(hours=3)
+    gaptime = timedelta(hours=gaptime_n)
     #prediction_date = timedelta(hours=10*3)
     #response_time = timedelta(hours=24) # 已经作为参数传递
     target_date = prediction_date + response_time
@@ -631,7 +631,7 @@ def main(group_id, topic_list, threshold_p, prediction_date_tr, response_time_de
     #prepare_MDT_dataset(test_set, 'MDT_test.pickle')
     #return    
     
-    k = 5
+    k = best_k
     num_level = 2
     num_factor = len(train_set[0][1][1])
     
@@ -648,26 +648,26 @@ def main(group_id, topic_list, threshold_p, prediction_date_tr, response_time_de
     topic_popularity, prior_score, mutual_knn_graph_list = caculate_instance_prior_confidence_score(train_set, test_set, k, num_factor, num_level = 2) # for IPW_mutual_knn.py
     
     # 保存prior-score，train dataset，test-dataset
-    save_intermediate_results(train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list)
+    #save_intermediate_results(train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list)
     #"""
     
-    print 'Loading train_set, test_set, comment_count_dataset, ... and prior_score...'
-    train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list = load_intermediate_results()
-    train_cnt = len(train_set)
-    k=3; num_level=2; num_factor = len(train_set[0][1][1])
+    #print 'Loading train_set, test_set, comment_count_dataset, ... and prior_score...'
+    #train_set, test_set, comment_count_dataset, Bao_dataset, category_count_list, topic_popularity, prior_score, mutual_knn_graph_list = load_intermediate_results()
+    #train_cnt = len(train_set)
+    #k = best_k; num_level=2; num_factor = len(train_set[0][1][1])
     #factor_name_list = ['current_comment_count', 'num_authors', 'tree_density', 'reply_density'] # 需要考察的factor变量
     #factor_propagation_plot(group_id, train_set+test_set, num_feature, category_count_list, range(4), factor_name_list)
     #return 
     
     print 'Parameter set:'
     print 'Gap time: ', gaptime
-    print 'Prediction date:', prediction_date.total_seconds() / 60*60
-    print 'Response time:', response_time.total_seconds() / 60 * 60
+    print 'Prediction date(in hours):', prediction_date.total_seconds() / 3600
+    print 'Response time(in hours):', response_time.total_seconds() / 3600
     print 'percentage_threshold: ', percentage_threshold
     print 'k = ', k
 
     # TODO：测试是否过拟合
-    test_set = train_set
+    #test_set = train_set  # 将训练集作为测试集，查看是否过拟合
     print 'Classify test instances...'
     y_true, y_pred, comment_true, comment_pred, give_up_list, prediction_list, factor_prediction = \
         classify(train_set, test_set, k, num_factor, num_level, prior_score, topic_popularity, mutual_knn_graph_list)
@@ -716,8 +716,8 @@ def main(group_id, topic_list, threshold_p, prediction_date_tr, response_time_de
     classification_evaluation(y_true, y_pred)
     
     print '\nkNN method:'
-    k = 1
-    y_true, y_pred, comment_true_cnt, comment_pred_cnt = knn_method(train_set, test_set, k, num_feature, alpha)
+    knn_k = 1
+    y_true, y_pred, comment_true_cnt, comment_pred_cnt = knn_method(train_set, test_set, knn_k, num_feature, alpha)
     comment_RSE_evaluation(comment_true_cnt, comment_pred_cnt)    
     # level wise classification
     classification_evaluation(y_true, y_pred)
@@ -747,36 +747,48 @@ if __name__ == '__main__':
     topic_list = load_id_list(topiclist_path)
     print 'Number of total topics loaded: ', len(topic_list)
     # for test
-    #topic_list = topic_list[:100] # rather small scale test
+    #topic_list = topic_list[:50] # rather small scale test
     
     num_runs = 1 # 运行次数
     avg_IPW_acc = 0.0
     avg_single_factor_acc = np.array([0]*6, float)
     
     # two free parameters
-    #threshold_list = [0.3, 0.4, 0.5, 0.6, 0.7]
-    threshold_list = [0.5]
+    #threshold_list = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+    threshold_list = [0.7]
+    
     #prediction_date_list = [24, 36, 48, 60, 72, 84, 96, 108, 120]
-    #prediction_date_list = [48, 60, 72, 84, 96]
-    prediction_date_list = [48]
-    response_time_delta_list = [6, 12, 18, 24, 30, 36, 42, 48]
+    #prediction_date_list = [40, 45, 50, 55, 60, 65, 70, 75, 80]
+    prediction_date_list = [50]
+    
+    #response_time_delta_list = [10, 15, 20, 25, 30, 35, 40]
+    response_time_delta_list = [25]
+    
+    gaptime_list = [1, 3, 5, 7, 9]
+    #gaptime_list = [5]
+    
+    best_k = 5
     
     print 'Averaging the results:'
     for threshold_p in threshold_list:
         for prediction_date_tr in prediction_date_list:
             for response_time_delta in response_time_delta_list:
-                avg_IPW_acc = 0.0
-                for i in range(num_runs):
-                    shuffle(topic_list)
-                    IPW_acc, single_factor_acc = main(group_id, topic_list, threshold_p, prediction_date_tr, response_time_delta)
-                    
-                    avg_IPW_acc += IPW_acc
-                    avg_single_factor_acc += np.array(single_factor_acc, float)
+                for gaptime_n in gaptime_list:
+                    avg_IPW_acc = 0.0
+                    for i in range(num_runs):
+                        shuffle(topic_list)
+                        IPW_acc, single_factor_acc = main(group_id, topic_list, threshold_p, prediction_date_tr, response_time_delta, gaptime_n, best_k)
+                        
+                        avg_IPW_acc += IPW_acc
+                        avg_single_factor_acc += np.array(single_factor_acc, float)
 
-                avg_IPW_acc /= num_runs
-                avg_single_factor_acc /= num_runs
-                
-                print 'Threshold:', threshold_p
-                print 'Prediction date:', prediction_date_tr
-                print 'avg_IPW_acc: ', avg_IPW_acc
-                print 'avg_single_factor_acc: ', avg_single_factor_acc
+                    avg_IPW_acc /= num_runs
+                    avg_single_factor_acc /= num_runs
+                    
+                    print 'Threshold:', threshold_p
+                    print 'Prediction date:', prediction_date_tr
+                    print 'Response time: ', response_time_delta
+                    print 'gaptime: ', gaptime_n
+                    
+                    print 'avg_IPW_acc: ', avg_IPW_acc
+                    print 'avg_single_factor_acc: ', avg_single_factor_acc
